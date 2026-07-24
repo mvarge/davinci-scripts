@@ -96,7 +96,18 @@ class ResolveKit:
 
     @property
     def fps(self) -> float:
-        return float(self.timeline.GetSetting("timelineFrameRate"))
+        """Timeline frame rate. GetSetting returns a string that is
+        occasionally malformed; parse defensively."""
+        from .timecode import parse_fps
+
+        try:
+            raw = self.timeline.GetSetting("timelineFrameRate")
+        except Exception as exc:  # bridge errors surface as generic exceptions
+            raise ResolveConnectionError(f"Could not read timeline frame rate: {exc}") from exc
+        try:
+            return parse_fps(raw)
+        except ValueError as exc:
+            raise ResolveConnectionError(str(exc)) from exc
 
     def page(self) -> str:
         """Current Resolve page (media, cut, edit, fusion, color, fairlight, deliver)."""
@@ -147,9 +158,15 @@ class ResolveKit:
         }
         tl = proj.GetCurrentTimeline()
         if tl:
+            from .timecode import parse_fps
+
+            try:
+                fps: Optional[float] = parse_fps(tl.GetSetting("timelineFrameRate"))
+            except Exception:
+                fps = None
             info.update(
                 timeline=tl.GetName(),
-                fps=float(tl.GetSetting("timelineFrameRate")),
+                fps=fps,
                 video_tracks=tl.GetTrackCount("video"),
                 audio_tracks=tl.GetTrackCount("audio"),
                 start_frame=tl.GetStartFrame(),
