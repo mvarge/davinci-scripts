@@ -365,3 +365,120 @@ on each input) is the most valuable technique for
 figuring out any new tool type. Add a tool manually
 in Fusion, then run the explorer to see all its
 input names and current values.
+
+## Known API Pitfalls (live-verified)
+
+Distilled from live-verified findings in the davinci-resolve-mcp project (MIT, samuelgursky) plus our own testing. Verified against Resolve Studio 21.0 unless noted.
+
+### Markers & timecode
+
+- **Marker frameIds are timeline-relative** (frame 0 = first frame of the
+  timeline), but `GetCurrentTimecode` and the UI show absolute timecode.
+  `AddMarker` accepts an absolute frame without validation and `GetMarkers()`
+  echoes it back — the marker just lands past the end of the timeline and is
+  invisible in the UI. Always subtract `GetStartFrame()` before adding.
+- **`GetSetting("timelineFrameRate")` returns a string**, and not always a
+  clean one. Don't `int()` it blindly — extract the numeric part (regex or
+  equivalent) and go through `float()`.
+
+### Return values you cannot trust
+
+The general defense: **verify by readback**. Re-read the actual post-state
+instead of trusting the boolean; a `True` that readback contradicts is the
+real failure signal.
+
+- **Many setters return `True` regardless of effect.** Example:
+  `SetClipProperty('Reel Name', ...)` returns `True` but the value is silently
+  dropped on read-back when the project derives reel names automatically
+  (General Options > "Assist using reel names"). Read the property back and
+  compare.
+- **`MediaPool.AutoSyncAudio` returns a boolean unrelated to whether clips
+  actually linked.** Verify by reading each clip's `'Synced Audio'` property.
+- **`ProjectManager.DeleteProject` is flaky on the first attempt** and returns
+  `False` (no deletion) when the target is — or recently was — the current
+  project. Load/close away from the target first, then retry.
+- **Fusion `Composition.Paste()` with an in-memory `SaveSettings()` table
+  fails silently** across the Python bridge (no node created). Round-trip
+  through a temp `.setting` *file* (`SaveSettings(path)` / `LoadSettings(path)`)
+  instead.
+- `ProjectManager.CreateProject` returns `None` and pops a **modal "Save
+  Current Project" dialog** when a dirty Untitled project blocks the switch.
+  `CloseProject(current)` first to discard it without a prompt.
+
+### Missing & fabricated APIs
+
+- **`hasattr()`/`getattr()` on any Resolve object always succeed** — the
+  Python bridge fabricates a callable for *any* attribute name, so
+  `hasattr(tl, 'Razor')` is `True` even though no such method exists (calling
+  it returns `None`/`False` with no error). Test membership against
+  `dir(obj)` instead; it lists only the real methods.
+- **No `GetTimelineByName`.** Iterate
+  `GetTimelineByIndex(1..GetTimelineCount())` and compare names yourself.
+- **No razor/blade/split**, and **no trim/move/duration setters** on
+  `TimelineItem` (`GetStart`/`GetEnd`/offsets are getters only). Rebuild via
+  `AppendToTimeline` clipInfos with the desired in/out/record frames, or edit
+  in the UI.
+- **No clip speed/retime control**: `SetProperty('Speed'|'PlaybackSpeed'|...)`
+  all return `False`; only retime *quality* (`RetimeProcess`,
+  `MotionEstimation`) is settable. No speed ramps either.
+- **No transition API at all** — transitions can't be added, read, copied, or
+  cloned; UI-applied ones are invisible to scripts.
+- **No insert/overwrite/replace/fit-to-fill edit modes.**
+  `MediaPool.AppendToTimeline` (with clipInfo `recordFrame`) is the only
+  programmatic placement.
+- **No Fairlight mixing**: clip/track volume, pan, EQ, automation, and
+  FairlightFX are unscriptable. Beware: `SetProperty('Pan', ...)` succeeds
+  because `Pan` is the *video transform* key, not audio pan.
+- **No color node-graph editing or primary grade values** — you can't
+  add/connect nodes or read/write lift/gamma/gain/curves/windows. Grading is
+  limited to CDL (`SetCDL`), whole-grade DRX/LUT application, and `CopyGrades`.
+
+### Project & Media Pool quirks
+
+- Render methods (`AddRenderJob`, `SetRenderSettings`, `LoadRenderPreset`)
+  live **on the Project object**, not a separate render interface.
+- **No proxy/optimized-media generation** — only `LinkProxyMedia`/
+  `UnlinkProxyMedia` for proxies that already exist on disk.
+- **No Smart Bin or Power Bin creation** (`AddSubFolder` makes regular bins
+  only) and **no folder rename** (create/delete/move only).
+- **No native multicam clip creation** — you can stack angles on tracks, but
+  the multicam conversion itself is UI-only.
+- `GetClipProperty('Transcription')` returns a **preview** — a trailing
+  ellipsis means the transcript was truncated.
+
+### Enum-keyed dict parameters (silent string rejection)
+
+Several calls take dicts keyed by **live enum constants** resolved from the
+`resolve` handle — plain string keys/values are silently rejected (call
+returns `False`, nothing happens):
+
+- `MediaPool.AutoSyncAudio` (`resolve.AUDIO_SYNC_*` keys)
+- `Timeline.CreateSubtitlesFromAudio` (`SUBTITLE_*` keys, `AUTO_CAPTION_*` values)
+- `Timeline.Export` (`EXPORT_*` enum *values* — even the string
+  `'EXPORT_FCPXML_1_10'` fails; no file is written)
+- The cloud project family (`Create/Load/Import/RestoreCloudProject`,
+  `CLOUD_SETTING_*` / `CLOUD_SYNC_*`)
+
+Always fetch the constants off the live `resolve` object at call time, and
+verify the effect afterward (file exists, track count changed, etc.).
+
+### Timeline editing quirks
+
+- **`AppendToTimeline` clipInfo `endFrame` is EXCLUSIVE**: item duration is
+  `endFrame - startFrame`. Assuming an inclusive bound drifts one frame per
+  clip — advancing a record cursor by `(end - start + 1)` leaves 1-frame holes.
+  Treat `[startFrame, endFrame)` as half-open everywhere.
+- **`Insert*IntoTimeline` (titles/generators/Fusion comps) take no track
+  index** — they always land on the Source Track Selector's target (V1 in
+  practice), there's no API to read/set that selector, and locking V1 makes
+  the insert *fail* rather than fall through to V2. Inserted titles/generators
+  also can't be moved afterward (no MediaPoolItem).
+- **`GrabStill`/`ExportStills` need settle time and don't report the output
+  filename.** GrabStill requires the Color page with a clip under the
+  playhead; ExportStills wants the Gallery open. Sleep briefly (~0.3–0.5 s)
+  between grab, export, and filesystem checks, and detect the written file by
+  diffing a directory listing taken before the export.
+- **`Graph.SetLUT` resolves paths only against the master LUT directory** —
+  a basename or even an absolute path into the per-user LUT dir returns
+  `False`. Copy the LUT into a subfolder of the master dir, `RefreshLUTList()`,
+  and pass the master-relative path.
