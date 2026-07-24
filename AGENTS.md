@@ -16,12 +16,19 @@ The loop:
    errors, surface the hint to the user — don't guess.
 2. **Write a small script** using `resolve_kit` (see README) plus
    `RESOLVE_API_REFERENCE.md` / `RESOLVE_SCRIPTING_GUIDE.md` for API details.
+   **Read the "Known API Pitfalls" section of the scripting guide first** —
+   the bridge lies (hasattr always True, setters return True without effect,
+   marker frames are timeline-relative). Use `has_method()` before calling
+   optional APIs and `verify_by_readback()` for writes that must land.
    Run scripts with `PYTHONPATH=<repo root>` or from the repo root.
-3. **Destructive changes**: implement a `--dry-run` mode and run it first;
-   tag created objects (e.g. marker `note` prefix like `[script-name]`) so
-   they can be found and reverted with `delete_markers(note_contains=...)`.
-4. **Verify after writing**: re-read state (`rk.summary()`, `get_markers`,
-   item iteration) and report what actually changed.
+3. **Destructive changes**: use `dry_run=True` first (built into
+   `delete_markers`; implement the same in new scripts); tag created objects
+   via marker `custom_data` (invisible in UI) so they can be reverted with
+   `delete_markers(custom_data=...)`.
+4. **Verify after writing**: re-read RAW state (`tl.GetMarkers()`,
+   `rk.summary()`, item iteration) and report what actually changed.
+5. **Sanity check**: `PYTHONPATH=. python3 tests/live_smoke.py` runs a
+   non-invasive live test suite (reversible ops only).
 
 Rules:
 
