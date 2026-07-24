@@ -174,6 +174,45 @@ class ResolveKit:
                 return tl
         return None
 
+    # -- session state save/restore -------------------------------------------
+
+    def save_state(self) -> dict:
+        """Snapshot page, current timeline, and playhead timecode, so scripts
+        that switch pages or move the playhead can put the user back where
+        they were. Pair with restore_state() in a finally block."""
+        state: dict = {"page": self.page()}
+        tl = self.project.GetCurrentTimeline()
+        if tl:
+            state["timeline"] = tl.GetName()
+            try:
+                state["timecode"] = tl.GetCurrentTimecode()
+            except Exception:
+                state["timecode"] = None
+        return state
+
+    def restore_state(self, state: dict) -> None:
+        """Restore a save_state() snapshot. Order matters: page first (so
+        subsequent calls land in the right context), then timeline, then
+        playhead."""
+        page = state.get("page")
+        if page:
+            self.resolve.OpenPage(page)
+        name = state.get("timeline")
+        if name:
+            tl = self.project.GetCurrentTimeline()
+            if not tl or tl.GetName() != name:
+                target = self.find_timeline(name)
+                if target:
+                    self.project.SetCurrentTimeline(target)
+        timecode = state.get("timecode")
+        if timecode:
+            tl = self.project.GetCurrentTimeline()
+            if tl:
+                try:
+                    tl.SetCurrentTimecode(timecode)
+                except Exception:
+                    pass  # playhead restore is best-effort
+
     def summary(self) -> dict:
         """Quick, safe snapshot of the current session (for agent verification)."""
         proj = self.project
