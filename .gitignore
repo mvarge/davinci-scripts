@@ -1,0 +1,17 @@
+# Blackmagic's copyrighted manual — local Q&A copy only, never publish
+manual/
+
+# scratch scripts
+temp_*.py
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# editor/agent local state
+.opencode/
