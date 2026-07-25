@@ -3,6 +3,14 @@
 Python scripting for DaVinci Resolve, plus a local searchable copy of the
 official manual.
 
+## Git workflow (project override)
+
+This is a small personal package: **direct commits to `main` are fine — no
+feature branches or PRs needed for now.** Keep commits small and
+conventional. Every library change must come with unit tests
+(`tests/test_*.py`, runnable without Resolve) and pass the full suite before
+pushing.
+
 ## Driving Resolve from prompts (no MCP needed)
 
 An agent with shell access can control Resolve directly via the scripting
