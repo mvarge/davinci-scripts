@@ -74,6 +74,32 @@ class ResolveKit:
         if self.project_manager is None:
             self.project_manager = self.resolve.GetProjectManager()
 
+    # -- liveness -------------------------------------------------------------
+
+    def is_alive(self) -> bool:
+        """Cheaply verify the cached Resolve handle still works.
+
+        After Resolve restarts, stale handles fail deep inside fusionscript
+        (None returns or opaque exceptions) instead of erroring clearly.
+        """
+        try:
+            return self.resolve.GetVersion() is not None
+        except Exception:
+            return False
+
+    def reconnect(self) -> None:
+        """Re-establish the connection in place (e.g. after a Resolve restart)."""
+        fresh = connect(need_project=False)
+        self.resolve = fresh.resolve
+        self.project_manager = fresh.project_manager
+
+    def version(self) -> dict:
+        """Product name and version of the connected Resolve."""
+        return {
+            "product": self.resolve.GetProductName(),
+            "version": self.resolve.GetVersionString(),
+        }
+
     # -- current state ------------------------------------------------------
 
     @property
@@ -96,7 +122,18 @@ class ResolveKit:
 
     @property
     def fps(self) -> float:
-        return float(self.timeline.GetSetting("timelineFrameRate"))
+        """Timeline frame rate. GetSetting returns a string that is
+        occasionally malformed; parse defensively."""
+        from .timecode import parse_fps
+
+        try:
+            raw = self.timeline.GetSetting("timelineFrameRate")
+        except Exception as exc:  # bridge errors surface as generic exceptions
+            raise ResolveConnectionError(f"Could not read timeline frame rate: {exc}") from exc
+        try:
+            return parse_fps(raw)
+        except ValueError as exc:
+            raise ResolveConnectionError(str(exc)) from exc
 
     def page(self) -> str:
         """Current Resolve page (media, cut, edit, fusion, color, fairlight, deliver)."""
@@ -137,19 +174,65 @@ class ResolveKit:
                 return tl
         return None
 
+    # -- session state save/restore -------------------------------------------
+
+    def save_state(self) -> dict:
+        """Snapshot page, current timeline, and playhead timecode, so scripts
+        that switch pages or move the playhead can put the user back where
+        they were. Pair with restore_state() in a finally block."""
+        state: dict = {"page": self.page()}
+        tl = self.project.GetCurrentTimeline()
+        if tl:
+            state["timeline"] = tl.GetName()
+            try:
+                state["timecode"] = tl.GetCurrentTimecode()
+            except Exception:
+                state["timecode"] = None
+        return state
+
+    def restore_state(self, state: dict) -> None:
+        """Restore a save_state() snapshot. Order matters: page first (so
+        subsequent calls land in the right context), then timeline, then
+        playhead."""
+        page = state.get("page")
+        if page:
+            self.resolve.OpenPage(page)
+        name = state.get("timeline")
+        if name:
+            tl = self.project.GetCurrentTimeline()
+            if not tl or tl.GetName() != name:
+                target = self.find_timeline(name)
+                if target:
+                    self.project.SetCurrentTimeline(target)
+        timecode = state.get("timecode")
+        if timecode:
+            tl = self.project.GetCurrentTimeline()
+            if tl:
+                try:
+                    tl.SetCurrentTimecode(timecode)
+                except Exception:
+                    pass  # playhead restore is best-effort
+
     def summary(self) -> dict:
         """Quick, safe snapshot of the current session (for agent verification)."""
         proj = self.project
         info = {
+            **self.version(),
             "project": proj.GetName(),
             "page": self.page(),
             "timeline_count": proj.GetTimelineCount(),
         }
         tl = proj.GetCurrentTimeline()
         if tl:
+            from .timecode import parse_fps
+
+            try:
+                fps: Optional[float] = parse_fps(tl.GetSetting("timelineFrameRate"))
+            except Exception:
+                fps = None
             info.update(
                 timeline=tl.GetName(),
-                fps=float(tl.GetSetting("timelineFrameRate")),
+                fps=fps,
                 video_tracks=tl.GetTrackCount("video"),
                 audio_tracks=tl.GetTrackCount("audio"),
                 start_frame=tl.GetStartFrame(),
@@ -162,15 +245,30 @@ class ResolveKit:
 def connect(need_project: bool = True) -> ResolveKit:
     """Connect to the running Resolve instance and return a ResolveKit.
 
+    Honors RESOLVE_SCRIPT_HOST (and RESOLVE_SCRIPT_TIMEOUT, ms) for Resolve's
+    network scripting mode; defaults to the local instance.
+
     Raises ResolveConnectionError with actionable hints on failure.
     """
     dvr = load_resolve_module()
-    resolve = dvr.scriptapp("Resolve")
+
+    host = os.environ.get("RESOLVE_SCRIPT_HOST")
+    if host:
+        timeout_ms = os.environ.get("RESOLVE_SCRIPT_TIMEOUT")
+        args = [host]
+        if timeout_ms:
+            args.append(int(timeout_ms))
+        resolve = dvr.scriptapp("Resolve", *args)
+    else:
+        resolve = dvr.scriptapp("Resolve")
+
     if resolve is None:
+        where = f"at {host}" if host else "locally"
         raise ResolveConnectionError(
-            "Could not connect to DaVinci Resolve.\n"
+            f"Could not connect to DaVinci Resolve {where}.\n"
             "  - Is Resolve running?\n"
-            "  - Preferences > General > External scripting using > Local\n"
+            "  - Preferences > General > External scripting using > "
+            + ("Network" if host else "Local") + "\n"
             "  - External scripting requires Resolve Studio."
         )
     kit = ResolveKit(resolve=resolve)

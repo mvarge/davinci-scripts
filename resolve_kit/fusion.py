@@ -35,8 +35,22 @@ def get_tool_inputs(tool: Any, comp: Any, names: Iterable[str]) -> dict[str, Any
     return out
 
 
-def set_tool_inputs(tool: Any, comp: Any, values: dict[str, Any]) -> None:
-    """Set tool inputs at the comp's current time."""
+def set_tool_inputs(tool: Any, comp: Any, values: dict[str, Any],
+                    verify: bool = False) -> dict[str, Any]:
+    """Set tool inputs at the comp's current time.
+
+    With verify=True, each input is read back after writing; returns a dict
+    of {name: observed_value} for inputs whose readback does not match
+    (empty dict = all confirmed). Without verify, returns an empty dict.
+    Note: SetInput's lack of errors proves nothing — the bridge fails
+    silently on unknown input names.
+    """
     time = comp.CurrentTime
+    mismatches: dict[str, Any] = {}
     for name, val in values.items():
         tool.SetInput(name, val, time)
+        if verify:
+            observed = tool.GetInput(name, time)
+            if observed != val:
+                mismatches[name] = observed
+    return mismatches

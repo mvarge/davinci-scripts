@@ -57,20 +57,40 @@ delete_markers(rk.timeline, note_contains="[my-script]")
 
 | Module | Contents |
 |--------|----------|
-| `connection` | `connect()`, `ResolveKit` (lazy `project` / `timeline` / `media_pool` accessors, `iter_video_items`, `iter_audio_items`, `iter_media_pool_clips`, `find_timeline`, `summary()`), cross-platform module discovery |
-| `markers` | `get_markers`, `add_marker`, `delete_markers` — all filterable by color/note, `MARKER_COLORS` list |
-| `fusion` | `find_tools_by_id`, `first_tool_by_id`, `get_tool_inputs`, `set_tool_inputs` — e.g. for batch-editing Text+ tools |
+| `connection` | `connect()` (local or `RESOLVE_SCRIPT_HOST` network mode), `ResolveKit` (lazy `project` / `timeline` / `media_pool` accessors, `is_alive()` / `reconnect()`, `save_state()` / `restore_state()`, iterators, `find_timeline`, `summary()`), cross-platform module discovery |
+| `markers` | `get_markers`, `add_marker`, `delete_markers` — filterable by color / note / `custom_data`, `dry_run` previews, no-filter guard, color normalization, timecode input |
+| `timecode` | `timecode_to_frames` / `frames_to_timecode` (incl. drop-frame and NTSC nominal rates), `parse_fps`, marker-frame rebasing (relative ↔ absolute) |
+| `introspect` | `has_method` (the bridge fabricates callables — `hasattr` always lies), `verify_by_readback` (many setters return `True` regardless of effect) |
+| `fusion` | `find_tools_by_id`, `first_tool_by_id`, `get_tool_inputs`, `set_tool_inputs(verify=...)` — e.g. for batch-editing Text+ tools |
 
 Design principles:
 
 - **Thin wrapper, not an abstraction layer.** `ResolveKit` hands you the raw
   API objects; helpers only remove boilerplate (path setup, null checks,
   track iteration).
-- **Tag your writes.** Scripts that create markers/objects should stamp them
-  (e.g. a `note` prefix) so they can be found and reverted later — see
-  `create_beat_markers.py` for the pattern.
+- **Don't trust the API's return values.** Boolean success from Resolve
+  setters is unreliable — use `verify_by_readback` and the pitfalls guide
+  (`RESOLVE_SCRIPTING_GUIDE.md` > Known API Pitfalls).
+- **Tag your writes.** Machine-generated markers should carry `custom_data`
+  (invisible in the UI) so they can be found and reverted with
+  `delete_markers(custom_data=...)`.
 - **Verify after writing.** `rk.summary()` and the filterable getters make it
   cheap to confirm a change actually landed.
+
+## Testing
+
+```bash
+# pure unit tests (no Resolve needed)
+python3 -m pytest tests/test_timecode.py
+
+# live smoke test — requires Resolve Studio running with a project open.
+# Non-invasive by default (reversible marker ops, page switch + restore).
+PYTHONPATH=. python3 tests/live_smoke.py
+
+# --full additionally creates/deletes a disposable `_rk_test_*` project
+# (switches your current project — save first)
+PYTHONPATH=. python3 tests/live_smoke.py --full
+```
 
 ## Utility scripts
 
