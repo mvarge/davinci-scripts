@@ -31,7 +31,7 @@ import os
 import sys
 import zipfile
 
-PACK_NAME = "URAGH Essentials"
+PACK_NAME = "mvarge Essentials"
 DIST = os.path.join(os.path.dirname(__file__), "..", "dist")
 
 BURN_SEQ_DIR = os.path.expanduser(
