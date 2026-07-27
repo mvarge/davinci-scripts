@@ -1,8 +1,15 @@
 # davinci-scripts
 
-Python scripting for DaVinci Resolve: a lean helper library (`resolve_kit`)
-plus ready-to-use utility scripts. Designed for both humans and AI coding
-agents driving Resolve from prompts.
+[![tests](https://github.com/mvarge/davinci-scripts/actions/workflows/tests.yml/badge.svg)](https://github.com/mvarge/davinci-scripts/actions/workflows/tests.yml)
+
+Python tooling for DaVinci Resolve:
+
+- **`resolve_kit`** — a lean, zero-dependency helper library for scripting
+  Resolve, designed for both humans and AI coding agents driving Resolve
+  from prompts.
+- **`drfx/`** — generators that build installable Resolve content from code:
+  Fusion **transitions** (.drfx), Edit-page **effects** (.drfx), and
+  creative **LUTs** (.cube).
 
 ## Requirements
 
@@ -101,6 +108,40 @@ PYTHONPATH=. python3 tests/live_smoke.py --full
   elements, outline, shadow, spacing) from the first Text+ on the timeline to
   every other Text+, preserving each item's text. Supports `--dry-run`.
 
+## Content generators (`drfx/`)
+
+Installable Resolve content built from code — versionable, testable, and easy
+to tweak (each transition/effect/look is a small Python function):
+
+| Generator | Output | Install target |
+|---|---|---|
+| `make_pack.py` | "mvarge Essentials" — 7 Fusion transitions (Zoom/Spin Punch, Whip Pan ×4, Flash Cut) + optional film-burn transitions from local footage | `Fusion/Templates/` → Effects Library > Video Transitions |
+| `make_effects.py` | "mvarge FX" — 5 Edit-page effects (Vignette, Letterbox 2.39, Film Grain, Chromatic Aberration, Punch Glow) | `Fusion/Templates/` → Effects Library > Effects |
+| `make_luts.py` | "mvarge Looks" — 5 creative .cube LUTs (Punch, Film Fade, Teal Orange, Mono Crush, Cold Steel) | `LUT/` folder → LUT browser |
+
+```bash
+python3 drfx/make_pack.py --install      # transitions
+python3 drfx/make_effects.py --install   # effects
+python3 drfx/make_luts.py --install      # LUTs
+```
+
+Restart Resolve after installing .drfx packs (LUTs only need a "Refresh LUT
+List"). The format spec lives in each generator's module docstring —
+distilled from dissecting community packs plus ground-truth serializations
+probed from a live Resolve via `resolve_kit`.
+
+Key rules the generators enforce (and tests verify):
+
+- Transitions animate exclusively via `time/comp.RenderEnd` so they rescale
+  when trimmed on the timeline; effects are static.
+- Stock Fusion tools only — no version-pinned ResolveFX OFX nodes.
+- Transitions expose `MainInput1`/`MainInput2`/`MainOutput1`; effects expose
+  a single `MainInput1`.
+
+The film-burn transitions reference local media by absolute path (Fusion's
+Loader can't decode HEVC, so burns are extracted to JPEG sequences); they're
+skipped gracefully when the media isn't present.
+
 ## Scripting API docs
 
 - `RESOLVE_SCRIPTING_GUIDE.md` — hands-on guide from real experimentation
@@ -124,6 +165,13 @@ Resolve directly — no MCP server required. The loop:
 4. Re-read state to verify the result.
 
 See `AGENTS.md` for the full agent workflow used in this repo.
+
+## Contributing
+
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The short
+version: every change ships with unit tests that pass without Resolve
+(`python3 -m pytest tests/ --ignore=tests/live_smoke.py`), and content
+generators must follow the format rules above.
 
 ## License
 
