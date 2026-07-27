@@ -36,14 +36,34 @@ class TestSettingStructure:
         assert re.search(r"Tools = ordered\(\) \{\n\t\t\w+ = MacroOperator", content)
 
     def test_animation_is_duration_independent(self):
-        """All animation must use time/comp.RenderEnd, never frame-keyed
-        BezierSpline (which does not rescale with transition length)."""
+        """All animation must use time/comp.RenderEnd. Frame-keyed
+        BezierSplines don't rescale; TimeStretcher driven by a normalized
+        expression is the sanctioned way to retime embedded footage."""
         for name, gen in make_pack.TRANSITIONS.items():
             content = gen()
             assert "comp.RenderEnd" in content, name
             assert "BezierSpline" not in content, (
                 f"{name}: frame-keyed BezierSpline does not scale with duration"
             )
+
+    def test_film_burns_reference_existing_sequences(self):
+        """Film Burn loaders point at real JPEG sequence files on this machine."""
+        import os
+
+        for name, gen in make_pack.TRANSITIONS.items():
+            if not name.startswith("Film Burn"):
+                continue
+            content = gen()
+            for path in re.findall(r'Filename = "([^"]+)"', content):
+                assert os.path.exists(path), f"{name}: missing sequence {path}"
+
+    def test_film_burn_screen_blend(self):
+        for name, gen in make_pack.TRANSITIONS.items():
+            if not name.startswith("Film Burn"):
+                continue
+            content = gen()
+            assert 'ApplyMode = Input { Value = FuID { "Screen" }' in content, name
+            assert "TimeStretcher" in content, name
 
     def test_no_version_pinned_ofx(self):
         """ResolveFX OFX nodes are version-pinned; stock tools only."""
@@ -57,22 +77,28 @@ class TestSettingStructure:
             assert "AudioDisplay" not in content, name
             assert "CustomData" not in content, name
 
+    TOOL_TYPES = r"(?:MacroOperator|Custom|Transform|Dissolve|Blur|LUTBezier|Loader|TimeStretcher|Merge|Background)"
+
     def test_sourceop_references_resolve(self):
-        """Every SourceOp must reference a declared tool name."""
-        content = self._content()
-        declared = set(re.findall(r"(\w+) = (?:MacroOperator|Custom|Transform|Dissolve|Blur|LUTBezier)", content))
-        referenced = set(re.findall(r'SourceOp = "(\w+)"', content))
-        missing = referenced - declared
-        assert not missing, f"SourceOp references undeclared tools: {missing}"
+        """Every SourceOp must reference a declared tool name (all transitions)."""
+        for name, gen in make_pack.TRANSITIONS.items():
+            content = gen()
+            declared = set(re.findall(rf"(\w+) = {self.TOOL_TYPES} \{{", content))
+            referenced = set(re.findall(r'SourceOp = "(\w+)"', content))
+            missing = referenced - declared
+            assert not missing, f"{name}: SourceOp references undeclared tools: {missing}"
 
     def test_expressions_reference_declared_tools(self):
-        content = self._content()
-        declared = set(re.findall(r"(\w+) = (?:Custom|Transform|Dissolve|Blur)", content))
-        for expr in re.findall(r'Expression = "([^"]+)"', content):
-            for tool in re.findall(r"\b([A-Za-z_][A-Za-z_0-9]*)\.[A-Za-z_]", expr):
-                if tool in ("comp",):  # comp.RenderEnd is a builtin
-                    continue
-                assert tool in declared, f"expression references undeclared {tool!r}: {expr}"
+        for name, gen in make_pack.TRANSITIONS.items():
+            content = gen()
+            declared = set(re.findall(rf"(\w+) = {self.TOOL_TYPES} \{{", content))
+            for expr in re.findall(r'Expression = "([^"]+)"', content):
+                for tool in re.findall(r"\b([A-Za-z_][A-Za-z_0-9]*)\.[A-Za-z_]", expr):
+                    if tool in ("comp",):  # comp.RenderEnd is a builtin
+                        continue
+                    assert tool in declared, (
+                        f"{name}: expression references undeclared {tool!r}: {expr}"
+                    )
 
     def test_custom_tool_has_lut_boilerplate(self):
         """Custom tools must ship their 4 LUTBezier default splines."""
