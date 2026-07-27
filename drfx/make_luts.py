@@ -113,12 +113,80 @@ def look_cold_steel(r, g, b):
     return saturate(r, g, b, 0.78)
 
 
+# --- aggressive tier ---------------------------------------------------------
+
+def look_bleach_bypass(r, g, b):
+    """Skip-bleach: harsh contrast, heavy desaturation, hot highlights.
+    The war-movie / industrial look."""
+    y = luma(r, g, b)
+    r, g, b = saturate(r, g, b, 0.35)
+    # overlay-blend the luma onto itself for brutal contrast
+    def overlay(v):
+        return clamp(2 * v * y if y < 0.5 else 1 - 2 * (1 - v) * (1 - y))
+    r, g, b = overlay(r), overlay(g), overlay(b)
+    return (lift_gamma_gain(r, -0.03, 0.96, 1.08),
+            lift_gamma_gain(g, -0.03, 0.96, 1.08),
+            lift_gamma_gain(b, -0.03, 0.96, 1.06))
+
+
+def look_crimson_dove(r, g, b):
+    """Crushed blacks, blood-red mids, bone-white highlights. Duotone-ish
+    horror grade."""
+    y = luma(r, g, b)
+    y = scurve(y, 0.7)
+    y = lift_gamma_gain(y, -0.04, 0.9, 1.1)
+    # map luma through a black -> deep red -> white ramp
+    if y < 0.55:
+        t = y / 0.55
+        return (clamp(t * 0.75), clamp(t * 0.06), clamp(t * 0.08))
+    t = (y - 0.55) / 0.45
+    return (clamp(0.75 + t * 0.25), clamp(0.06 + t * 0.9), clamp(0.08 + t * 0.88))
+
+
+def look_toxic(r, g, b):
+    """Sickly green-yellow cross-process with crushed teal shadows."""
+    y = luma(r, g, b)
+    shadow = (1 - y) ** 2
+    r = clamp(lift_gamma_gain(r, -0.02, 1.08, 0.95) - 0.05 * shadow)
+    g = clamp(lift_gamma_gain(g, 0.01, 0.92, 1.06))
+    b = clamp(lift_gamma_gain(b, 0.0, 1.1, 0.8) + 0.04 * shadow)
+    r, g, b = (scurve(v, 0.5) for v in (r, g, b))
+    return saturate(r, g, b, 1.12)
+
+
+def look_midnight(r, g, b):
+    """Day-for-night: everything plunged toward blue-black, highlights
+    barely surviving. For doom sections."""
+    r = lift_gamma_gain(r, 0.0, 1.25, 0.55)
+    g = lift_gamma_gain(g, 0.0, 1.15, 0.62)
+    b = lift_gamma_gain(b, 0.02, 1.0, 0.78)
+    r, g, b = (scurve(v, 0.4) for v in (r, g, b))
+    return saturate(r, g, b, 0.65)
+
+
+def look_burnout(r, g, b):
+    """Blown warm highlights, chocolate shadows, heavy orange cast —
+    overexposed-film-in-the-sun energy."""
+    y = luma(r, g, b)
+    highlight = y ** 1.5
+    r = clamp(lift_gamma_gain(r, 0.03, 0.85, 1.15) + 0.08 * highlight)
+    g = clamp(lift_gamma_gain(g, 0.02, 0.95, 1.0) + 0.03 * highlight)
+    b = clamp(lift_gamma_gain(b, 0.0, 1.15, 0.72))
+    r, g, b = (scurve(v, 0.45) for v in (r, g, b))
+    return saturate(r, g, b, 1.05)
+
+
 LOOKS = {
     "mvarge Punch": look_punch,
     "mvarge Film Fade": look_film_fade,
     "mvarge Teal Orange": look_teal_orange,
     "mvarge Mono Crush": look_mono_crush,
     "mvarge Cold Steel": look_cold_steel,
+    "mvarge Bleach Bypass": look_bleach_bypass,
+    "mvarge Crimson Dove": look_crimson_dove,
+    "mvarge Toxic": look_toxic,
+    "mvarge Midnight": look_midnight,
+    "mvarge Burnout": look_burnout,
 }
 
 

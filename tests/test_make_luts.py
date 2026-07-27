@@ -47,14 +47,21 @@ class TestLooks:
                     assert len(out) == 3
                     assert all(0.0 <= v <= 1.0 for v in out), (name, r, g, b, out)
 
+    # Looks that intentionally depart from "white stays bright":
+    # Midnight is a day-for-night grade — highlights are crushed by design.
+    DARK_LOOKS = {"mvarge Midnight"}
+
     @pytest.mark.parametrize("name", list(make_luts.LOOKS))
     def test_black_stays_dark_white_stays_bright(self, name):
-        """Creative looks may lift/crush slightly but must not invert."""
+        """Creative looks may lift/crush but must not invert, and must keep
+        a usable tonal range."""
         look = make_luts.LOOKS[name]
         black = make_luts.luma(*look(0, 0, 0))
         white = make_luts.luma(*look(1, 1, 1))
         assert black < 0.12, name
-        assert white > 0.88, name
+        floor = 0.5 if name in self.DARK_LOOKS else 0.88
+        assert white > floor, name
+        assert white - black > 0.45, f"{name}: tonal range collapsed"
 
     def test_mono_crush_is_monochrome(self):
         for rgb in ((0.2, 0.5, 0.8), (0.9, 0.1, 0.4)):
@@ -79,11 +86,12 @@ class TestCubeFormat:
             float(first[0])  # parseable
 
     def test_identity_corners(self, tmp_path):
-        """First row is black-ish, last row is white-ish for every look."""
+        """First row is black-ish, last row keeps a usable highlight,
+        for every look (day-for-night looks crush highlights by design)."""
         paths = make_luts.build_luts(out_dir=str(tmp_path))
         for path in paths:
             rows = [l for l in open(path).read().splitlines()[4:] if l.strip()]
             first = [float(v) for v in rows[0].split()]
             last = [float(v) for v in rows[-1].split()]
             assert make_luts.luma(*first) < 0.12, path
-            assert make_luts.luma(*last) > 0.88, path
+            assert make_luts.luma(*last) > 0.5, path
