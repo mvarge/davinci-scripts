@@ -40,10 +40,16 @@ __DEVICE__ float luma709(float3 rgb)
     return 0.2126f * rgb.x + 0.7152f * rgb.y + 0.0722f * rgb.z;
 }
 
+__DEVICE__ float3 lerp3(float3 a, float3 b, float t)
+{
+    // manual vector lerp: _mix() overloads with mixed float3/float args
+    // are not portable across CUDA/OpenCL/Metal backends
+    return a + (b - a) * _saturatef(t);
+}
+
 __DEVICE__ float3 sat_adjust(float3 rgb, float amount)
 {
-    // amount 1 = unchanged, 0 = grayscale, >1 boosts.
-    // manual extrapolation: _mix() is undefined outside [0,1] factors.
+    // amount 1 = unchanged, 0 = grayscale, >1 boosts
     float y = luma709(rgb);
     float a = _clampf(amount, 0.0f, 4.0f);
     float3 grey = make_float3(y, y, y);
@@ -85,9 +91,9 @@ def punch_dctl() -> str:
     """Parametric version of the mvarge Punch look: contrast + saturation
     with a master amount, all on sliders."""
     ui = [
-        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 2.0f, 0.05f)",
-        "DEFINE_UI_PARAMS(contrast, Contrast, DCTLUI_SLIDER_FLOAT, 0.45f, 0.0f, 1.0f, 0.05f)",
-        "DEFINE_UI_PARAMS(saturation, Saturation, DCTLUI_SLIDER_FLOAT, 1.18f, 0.0f, 2.0f, 0.02f)",
+        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 2.0, 0.05)",
+        "DEFINE_UI_PARAMS(contrast, Contrast, DCTLUI_SLIDER_FLOAT, 0.45, 0.0, 1.0, 0.05)",
+        "DEFINE_UI_PARAMS(saturation, Saturation, DCTLUI_SLIDER_FLOAT, 1.18, 0.0, 2.0, 0.02)",
     ]
     body = """\
     float3 rgb = make_float3(p_R, p_G, p_B);
@@ -96,7 +102,7 @@ def punch_dctl() -> str:
     graded.y = scurve(rgb.y, contrast);
     graded.z = scurve(rgb.z, contrast);
     graded = sat_adjust(graded, saturation);
-    return _mix(rgb, graded, _saturatef(amount));"""
+    return lerp3(rgb, graded, amount);"""
     return dctl_file(ui, body)
 
 
@@ -104,10 +110,10 @@ def split_tone_dctl() -> str:
     """Shadows toward one color, highlights toward another, with a luma
     pivot — generalizes the Crimson Dove / Teal Orange family."""
     ui = [
-        "DEFINE_UI_PARAMS(shadowColor, Shadow Color, DCTLUI_COLOR_PICKER, 0.1f, 0.25f, 0.35f)",
-        "DEFINE_UI_PARAMS(highColor, Highlight Color, DCTLUI_COLOR_PICKER, 1.0f, 0.75f, 0.45f)",
-        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 0.3f, 0.0f, 1.0f, 0.02f)",
-        "DEFINE_UI_PARAMS(pivot, Pivot, DCTLUI_SLIDER_FLOAT, 0.5f, 0.1f, 0.9f, 0.02f)",
+        "DEFINE_UI_PARAMS(shadowColor, Shadow Color, DCTLUI_COLOR_PICKER, 0.1, 0.25, 0.35)",
+        "DEFINE_UI_PARAMS(highColor, Highlight Color, DCTLUI_COLOR_PICKER, 1.0, 0.75, 0.45)",
+        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 0.3, 0.0, 1.0, 0.02)",
+        "DEFINE_UI_PARAMS(pivot, Pivot, DCTLUI_SLIDER_FLOAT, 0.5, 0.1, 0.9, 0.02)",
         "DEFINE_UI_PARAMS(preserveLuma, Preserve Luma, DCTLUI_CHECK_BOX, 1)",
     ]
     body = """\
@@ -119,8 +125,8 @@ def split_tone_dctl() -> str:
     float3 shadowTint = make_float3(shadowColor.r, shadowColor.g, shadowColor.b);
     float3 highTint = make_float3(highColor.r, highColor.g, highColor.b);
     float3 tinted = rgb;
-    tinted = _mix(tinted, tinted * (2.0f * shadowTint), _saturatef(sw * amount));
-    tinted = _mix(tinted, tinted * (2.0f * highTint), _saturatef(hw * amount));
+    tinted = lerp3(tinted, tinted * (2.0f * shadowTint), sw * amount);
+    tinted = lerp3(tinted, tinted * (2.0f * highTint), hw * amount);
     if (preserveLuma) {
         float yNew = luma709(tinted);
         float scale = yNew > 0.001f ? y / yNew : 1.0f;
@@ -137,8 +143,8 @@ def rgb_crosstalk_dctl() -> str:
     """Film-style channel bleed: each output channel picks up a fraction of
     the other two. Subtle amounts read as 'analog'."""
     ui = [
-        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 0.15f, 0.0f, 0.5f, 0.01f)",
-        "DEFINE_UI_PARAMS(warmth, Warmth Bias, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.05f)",
+        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 0.15, 0.0, 0.5, 0.01)",
+        "DEFINE_UI_PARAMS(warmth, Warmth Bias, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.05)",
     ]
     body = """\
     float3 rgb = make_float3(p_R, p_G, p_B);
@@ -158,9 +164,9 @@ def film_grain_dctl() -> str:
     NOTE: must be used via the ResolveFX DCTL plugin — applied as a plain
     LUT the frame index freezes at 1 and the grain is static."""
     ui = [
-        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 0.06f, 0.0f, 0.3f, 0.005f)",
+        "DEFINE_UI_PARAMS(amount, Amount, DCTLUI_SLIDER_FLOAT, 0.06, 0.0, 0.3, 0.005)",
         "DEFINE_UI_PARAMS(size, Grain Size, DCTLUI_SLIDER_INT, 1, 1, 4, 1)",
-        "DEFINE_UI_PARAMS(shadowWeight, Shadow Weight, DCTLUI_SLIDER_FLOAT, 0.7f, 0.0f, 1.0f, 0.05f)",
+        "DEFINE_UI_PARAMS(shadowWeight, Shadow Weight, DCTLUI_SLIDER_FLOAT, 0.7, 0.0, 1.0, 0.05)",
     ]
     body = """\
     float3 rgb = make_float3(p_R, p_G, p_B);
