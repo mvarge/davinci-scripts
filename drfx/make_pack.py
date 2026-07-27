@@ -468,24 +468,12 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
 \t\t\t\t\t}},
 \t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 55, 132 }} }},
 \t\t\t\t}},
-\t\t\t\tBurnColor = BrightnessContrast {{
+\t\t\t\tBurnSat = BrightnessContrast {{
 \t\t\t\t\tCtrlWShown = false,
 \t\t\t\t\tInputs = {{
 \t\t\t\t\t\tSaturation = Input {{
 \t\t\t\t\t\t\tValue = 1,
 \t\t\t\t\t\t\tExpression = "Params.NumberIn3",
-\t\t\t\t\t\t}},
-\t\t\t\t\t\tRed = Input {{
-\t\t\t\t\t\t\tValue = 1,
-\t\t\t\t\t\t\tExpression = "Params.NumberIn4",
-\t\t\t\t\t\t}},
-\t\t\t\t\t\tGreen = Input {{
-\t\t\t\t\t\t\tValue = 1,
-\t\t\t\t\t\t\tExpression = "Params.NumberIn5",
-\t\t\t\t\t\t}},
-\t\t\t\t\t\tBlue = Input {{
-\t\t\t\t\t\t\tValue = 1,
-\t\t\t\t\t\t\tExpression = "Params.NumberIn6",
 \t\t\t\t\t\t}},
 \t\t\t\t\t\tInput = Input {{
 \t\t\t\t\t\t\tSourceOp = "BurnScale",
@@ -493,6 +481,28 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
 \t\t\t\t\t\t}},
 \t\t\t\t\t}},
 \t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 82, 132 }} }},
+\t\t\t\t}},
+\t\t\t\tBurnColor = ColorGain {{
+\t\t\t\t\tCtrlWShown = false,
+\t\t\t\t\tInputs = {{
+\t\t\t\t\t\tGainRed = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn4",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tGainGreen = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn5",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tGainBlue = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn6",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tInput = Input {{
+\t\t\t\t\t\t\tSourceOp = "BurnSat",
+\t\t\t\t\t\t\tSource = "Output",
+\t\t\t\t\t\t}},
+\t\t\t\t\t}},
+\t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 96, 132 }} }},
 \t\t\t\t}},
 \t\t\t\tBurnMerge = Merge {{
 \t\t\t\t\tCtrlWShown = false,

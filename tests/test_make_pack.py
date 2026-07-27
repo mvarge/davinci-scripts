@@ -85,7 +85,7 @@ class TestSettingStructure:
             assert "AudioDisplay" not in content, name
             assert "CustomData" not in content, name
 
-    TOOL_TYPES = r"(?:MacroOperator|Custom|Transform|Dissolve|Blur|LUTBezier|Loader|TimeStretcher|Merge|Background|ChannelBoolean|BrightnessContrast)"
+    TOOL_TYPES = r"(?:MacroOperator|Custom|Transform|Dissolve|Blur|LUTBezier|Loader|TimeStretcher|Merge|Background|ChannelBoolean|BrightnessContrast|ColorGain)"
 
     def test_sourceop_references_resolve(self):
         """Every SourceOp must reference a declared tool name (all transitions)."""
