@@ -98,6 +98,14 @@ Section overview (file → topic):
 
 Note: the scripting API is NOT covered in the manual — for API questions use
 `RESOLVE_API_REFERENCE.md` and `RESOLVE_SCRIPTING_GUIDE.md` in the repo root.
+The GROUND TRUTH for API and DCTL specs is on disk at `/Library/Application
+Support/Blackmagic Design/DaVinci Resolve/Developer/` (Scripting/README.txt,
+DaVinciCTL/README.txt + 12 working sample .dctl files). When repo docs and
+that folder disagree, the Developer folder wins — read it BEFORE forming
+hypotheses; several plausible "remembered" DCTL/API rules have proven false.
+Before scripting a workaround for a seemingly missing feature, also grep the
+manual for the user-facing feature name — e.g. per-word subtitle highlighting
+is stock (drag an Animated title template onto the subtitle track header).
 
 ## Repo contents
 

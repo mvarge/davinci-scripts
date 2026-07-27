@@ -553,14 +553,22 @@ end
 
 ---
 
-## 18. API Gaps / Limitations (Resolve 20)
+## 18. API Gaps / Limitations (updated for Resolve 21, live-verified)
 
-- ❌ Cannot insert Fusion Composition generator onto timeline via API
 - ❌ Cannot create first timeline on a completely fresh project via API
 - ❌ No direct API for audio track manipulation in Fairlight page
-- ❌ No API for subtitle/caption track content editing
+- ❌ Subtitle caption text is READ-ONLY: `GetItemListInTrack("subtitle", n)` +
+  `GetName()` return real text/timing, but `SetName()` returns False and
+  changes nothing (verified by readback, 21.0.3). No caption create/edit/split.
+  Note: `CreateSubtitlesFromAudio()` DOES exist for generating the track, and
+  per-word animation is a stock UI feature (drag an "Animated" title template
+  onto the subtitle track header) — not an API problem to solve.
 - ❌ Fusion node keyframe dict assignment broken in external Python (use two-step)
 - ❌ No official Fusion node documentation — must use input inspector
+- ✅ `InsertFusionCompositionIntoTimeline`, `InsertFusionTitleIntoTimeline`,
+  `InsertGeneratorIntoTimeline` etc. exist and resolve live (an earlier
+  version of this file claimed Fusion comps couldn't be inserted — wrong;
+  but they always land on V1, see scripting guide "Timeline editing quirks")
 - ✅ Can render and export via Deliver API
 - ✅ Can manage media pool, folders, and clips
 - ✅ Can manipulate timeline items (markers, LUTs, versions, properties)

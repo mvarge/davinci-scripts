@@ -482,3 +482,65 @@ verify the effect afterward (file exists, track count changed, etc.).
   a basename or even an absolute path into the per-user LUT dir returns
   `False`. Copy the LUT into a subfolder of the master dir, `RefreshLUTList()`,
   and pass the master-relative path.
+
+### Subtitles (live-verified, 21.0.3)
+
+- **Subtitle item text is read-only.** `GetItemListInTrack("subtitle", n)`
+  works and `GetName()` returns the actual caption text (plus real
+  `GetStart`/`GetDuration`), but `SetName()` returns `False` and changes
+  nothing — verified by readback on a live AI-generated track. There is no
+  API to create, edit, split, or restyle individual captions.
+- **Per-word subtitle animation is a stock feature — don't build it.**
+  Resolve 21 Studio ships "AI Animated Subtitles" (manual p. 1281): drag a
+  template from Effects Library > Titles > **Animated** (e.g. **Word
+  Highlight**) onto the subtitle *track header*. Word timing comes from the
+  transcription engine. Any Fusion title template dropped on the track header
+  restyles the whole track, overriding Inspector styling — custom templates
+  work too. Before designing a scripted workaround for a "missing" feature,
+  grep the manual for the user-facing name first.
+- `Timeline.CreateSubtitlesFromAudio({...})` exists and is scriptable
+  (language/preset/chars-per-line/line-break constants — see the official
+  Developer README §"autoCaptionSettings"). `Timeline.Export` can emit SRT.
+
+### DCTL authoring (live-verified, 21.0.3)
+
+The authoritative spec is `/Library/Application Support/Blackmagic Design/
+DaVinci Resolve/Developer/DaVinciCTL/README.txt` plus 12 working samples in
+the same folder. **Read those first** — several plausible-sounding rules
+"remembered" about DCTL turned out to be false, and the compiler's errors
+mislead (see below). `drfx/make_dctls.py` + `tests/test_make_dctls.py`
+encode all of this.
+
+- **The entry function's `return` must not be a direct function call.**
+  `return myHelper(rgb, t);` fails the build even when the helper is declared
+  `float3`. Resolve infers the entry return type by *textually* inspecting
+  the return expression, not by resolving the callee. Assign to a local and
+  `return make_float3(v.x, v.y, v.z);` (or return a bare float3 variable).
+- **The error "main DCTL function's return value must be float3 to represent
+  RGB" is a catch-all** that names neither the real cause nor a line number.
+  Do not take it literally.
+- **No `#line` directive** (or any `#` preprocessor line) — Resolve rejects
+  the file outright with "Error Processing DaVinci CTL".
+- **The ResolveFX DCTL plugin's error dialog can be replaying a stale
+  selection.** The chosen DCTL is saved in the node and recompiled on every
+  project load, so the same error reappears ~20-30 s after each restart even
+  if you never touch the node. During debugging, check
+  `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/logs/
+  ResolveDebug.txt` (grep `DCTL`) for *which file* actually failed and when —
+  don't trust the dialog to be about the file you just edited.
+- **New .dctl files require a full Resolve restart** to appear in the DCTL
+  List; the plugin's Reload button re-reads only the currently selected
+  file's contents (manual p. 3617).
+- Things that DO work despite folklore to the contrary: `_mix` is generic
+  (`T _mix(T,T,float)` for float/float2/float3/float4), float3 operator
+  arithmetic (`a + (b - a) * t`), non-float3-returning helpers before the
+  entry function, and `max(int,int)`.
+- **A clang syntax gate (`drfx/dctl_stub.h`) cannot prove a DCTL builds** —
+  Resolve's parser rejects things clang accepts (see the return-statement
+  rule). Textual rules are enforced by regex tests instead; only a live
+  Resolve build is proof.
+- Debugging method that finally worked after five failed guesses:
+  **differential pairs** — two files identical except for ONE construct,
+  installed under unique names, checked against the debug log (not the
+  dialog). Copying an official sample in as a control distinguishes
+  "my code is wrong" from "the environment is wrong".
