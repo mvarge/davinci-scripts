@@ -15,3 +15,6 @@ venv/
 
 # editor/agent local state
 .opencode/
+
+# build artifacts
+dist/
