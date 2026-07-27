@@ -409,7 +409,9 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
     mix = f"iif({T} < 0.4, 0, iif({T} > 0.6, 1, ({T} - 0.4) * 5))"
 
     tools = "\n".join([
-        params_tool([("Burn Intensity", 1), ("Burn Size", 1)]),
+        params_tool([("Burn Intensity", 1), ("Burn Size", 1),
+                     ("Burn Saturation", 1), ("Tint Red", 1),
+                     ("Tint Green", 1), ("Tint Blue", 1)]),
         transform("XfA", {"Size": "Input { Value = 1, }"}, (-110, 0)),
         transform("XfB", {"Size": "Input { Value = 1, }"}, (-110, 66)),
         dissolve("Dissolve1", "XfA", "XfB", mix),
@@ -466,6 +468,32 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
 \t\t\t\t\t}},
 \t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 55, 132 }} }},
 \t\t\t\t}},
+\t\t\t\tBurnColor = BrightnessContrast {{
+\t\t\t\t\tCtrlWShown = false,
+\t\t\t\t\tInputs = {{
+\t\t\t\t\t\tSaturation = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn3",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tRed = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn4",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tGreen = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn5",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tBlue = Input {{
+\t\t\t\t\t\t\tValue = 1,
+\t\t\t\t\t\t\tExpression = "Params.NumberIn6",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tInput = Input {{
+\t\t\t\t\t\t\tSourceOp = "BurnScale",
+\t\t\t\t\t\t\tSource = "Output",
+\t\t\t\t\t\t}},
+\t\t\t\t\t}},
+\t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 82, 132 }} }},
+\t\t\t\t}},
 \t\t\t\tBurnMerge = Merge {{
 \t\t\t\t\tCtrlWShown = false,
 \t\t\t\t\tInputs = {{
@@ -480,7 +508,7 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
 \t\t\t\t\t\t\tSource = "Output",
 \t\t\t\t\t\t}},
 \t\t\t\t\t\tForeground = Input {{
-\t\t\t\t\t\t\tSourceOp = "BurnScale",
+\t\t\t\t\t\t\tSourceOp = "BurnColor",
 \t\t\t\t\t\t\tSource = "Output",
 \t\t\t\t\t\t}},
 \t\t\t\t\t}},
@@ -490,7 +518,11 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
     return macro(f"FilmBurn{display_index}", ("XfA", "Input"), ("XfB", "Input"),
                  "BurnMerge",
                  [("Params", "NumberIn1", "Burn Intensity", 1, 2),
-                  ("Params", "NumberIn2", "Burn Size", 1, 3)],
+                  ("Params", "NumberIn2", "Burn Size", 1, 3),
+                  ("Params", "NumberIn3", "Burn Saturation", 1, 2),
+                  ("Params", "NumberIn4", "Tint Red", 1, 2),
+                  ("Params", "NumberIn5", "Tint Green", 1, 2),
+                  ("Params", "NumberIn6", "Tint Blue", 1, 2)],
                  tools)
 
 
