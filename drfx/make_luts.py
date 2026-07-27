@@ -176,18 +176,28 @@ def look_burnout(r, g, b):
     return saturate(r, g, b, 1.05)
 
 
+# Style tiers — become subfolders in Resolve's LUT browser.
 LOOKS = {
-    "mvarge Punch": look_punch,
-    "mvarge Film Fade": look_film_fade,
-    "mvarge Teal Orange": look_teal_orange,
-    "mvarge Mono Crush": look_mono_crush,
-    "mvarge Cold Steel": look_cold_steel,
-    "mvarge Bleach Bypass": look_bleach_bypass,
-    "mvarge Crimson Dove": look_crimson_dove,
-    "mvarge Toxic": look_toxic,
-    "mvarge Midnight": look_midnight,
-    "mvarge Burnout": look_burnout,
+    "Cinematic": {
+        "mvarge Punch": look_punch,
+        "mvarge Film Fade": look_film_fade,
+        "mvarge Teal Orange": look_teal_orange,
+        "mvarge Cold Steel": look_cold_steel,
+        "mvarge Burnout": look_burnout,
+    },
+    "Aggressive": {
+        "mvarge Mono Crush": look_mono_crush,
+        "mvarge Bleach Bypass": look_bleach_bypass,
+        "mvarge Crimson Dove": look_crimson_dove,
+        "mvarge Toxic": look_toxic,
+        "mvarge Midnight": look_midnight,
+    },
 }
+
+
+def all_looks() -> dict:
+    """Flat {name: look} across all tiers (for tests and iteration)."""
+    return {name: look for tier in LOOKS.values() for name, look in tier.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -209,12 +219,14 @@ def write_cube(path: str, look, size: int = SIZE) -> None:
 
 
 def build_luts(out_dir: str = DIST) -> list[str]:
-    os.makedirs(out_dir, exist_ok=True)
     paths = []
-    for name, look in LOOKS.items():
-        path = os.path.join(out_dir, f"{name}.cube")
-        write_cube(path, look)
-        paths.append(path)
+    for tier, looks in LOOKS.items():
+        tier_dir = os.path.join(out_dir, tier)
+        os.makedirs(tier_dir, exist_ok=True)
+        for name, look in looks.items():
+            path = os.path.join(tier_dir, f"{name}.cube")
+            write_cube(path, look)
+            paths.append(path)
     return paths
 
 
@@ -233,16 +245,19 @@ def main() -> int:
     paths = build_luts()
     print(f"built {len(paths)} LUTs in {DIST}")
     for p in paths:
-        print(f"  - {os.path.basename(p)}")
+        tier = os.path.basename(os.path.dirname(p))
+        print(f"  - {tier}/{os.path.basename(p)}")
 
     if args.install:
         import shutil
 
-        dest_dir = resolve_lut_dir()
-        os.makedirs(dest_dir, exist_ok=True)
+        dest_root = resolve_lut_dir()
         for p in paths:
+            tier = os.path.basename(os.path.dirname(p))
+            dest_dir = os.path.join(dest_root, tier)
+            os.makedirs(dest_dir, exist_ok=True)
             shutil.copy2(p, dest_dir)
-        print(f"installed to: {dest_dir}")
+        print(f"installed to: {dest_root} ({', '.join(LOOKS)})")
         print("In Resolve: Project Settings > Color Management > Open LUT Folder /"
               " Refresh — then find them under the LUT browser as "
               f"'{PACK_NAME}'.")

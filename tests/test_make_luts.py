@@ -37,9 +37,9 @@ class TestColorMath:
 
 
 class TestLooks:
-    @pytest.mark.parametrize("name", list(make_luts.LOOKS))
+    @pytest.mark.parametrize("name", list(make_luts.all_looks()))
     def test_output_in_gamut(self, name):
-        look = make_luts.LOOKS[name]
+        look = make_luts.all_looks()[name]
         for r in (0.0, 0.25, 0.5, 0.75, 1.0):
             for g in (0.0, 0.5, 1.0):
                 for b in (0.0, 0.5, 1.0):
@@ -51,11 +51,11 @@ class TestLooks:
     # Midnight is a day-for-night grade — highlights are crushed by design.
     DARK_LOOKS = {"mvarge Midnight"}
 
-    @pytest.mark.parametrize("name", list(make_luts.LOOKS))
+    @pytest.mark.parametrize("name", list(make_luts.all_looks()))
     def test_black_stays_dark_white_stays_bright(self, name):
         """Creative looks may lift/crush but must not invert, and must keep
         a usable tonal range."""
-        look = make_luts.LOOKS[name]
+        look = make_luts.all_looks()[name]
         black = make_luts.luma(*look(0, 0, 0))
         white = make_luts.luma(*look(1, 1, 1))
         assert black < 0.12, name
@@ -65,14 +65,14 @@ class TestLooks:
 
     def test_mono_crush_is_monochrome(self):
         for rgb in ((0.2, 0.5, 0.8), (0.9, 0.1, 0.4)):
-            r, g, b = make_luts.LOOKS["mvarge Mono Crush"](*rgb)
+            r, g, b = make_luts.all_looks()["mvarge Mono Crush"](*rgb)
             assert r == g == b
 
 
 class TestCubeFormat:
     def test_file_structure(self, tmp_path):
         paths = make_luts.build_luts(out_dir=str(tmp_path))
-        assert len(paths) == len(make_luts.LOOKS)
+        assert len(paths) == len(make_luts.all_looks())
         for path in paths:
             lines = open(path).read().splitlines()
             assert lines[0].startswith('TITLE "')
