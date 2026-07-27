@@ -279,7 +279,7 @@ def chromatic_aberration_setting() -> str:
         }, pos)
 
     tools = "\n".join([
-        params_tool([("Shift Amount", 0.002)]),
+        params_tool([("Shift Amount", 0.005)]),
         tool("Src", "Transform", {
             "Size": "Input { Value = 1, }",
         }, (-220, 33)),
@@ -310,7 +310,7 @@ def chromatic_aberration_setting() -> str:
         }, (220, 33), last=True),
     ])
     return macro("ChromaticAberration", ("Src", "Input"), "MergeRGB",
-                 [("Params", "NumberIn1", "Shift Amount", 0.002, 0.01)],
+                 [("Params", "NumberIn1", "Shift Amount", 0.005, 0.02)],
                  tools)
 
 
@@ -318,13 +318,13 @@ def punch_glow_setting() -> str:
     """Straight SoftGlow with the three musical knobs exposed."""
     tools = tool("Glow", "SoftGlow", {
         "Filter": 'Input { Value = FuID { "Fast Gaussian" }, }',
-        "Gain": "Input { Value = 2, }",
-        "Threshold": "Input { Value = 0.75, }",
+        "Gain": "Input { Value = 3, }",
+        "Threshold": "Input { Value = 0.6, }",
         "Blend": "Input { Value = 1, }",
     }, (0, 0), last=True)
     return macro("PunchGlow", ("Glow", "Input"), "Glow",
-                 [("Glow", "Gain", "Glow Amount", 2, 5),
-                  ("Glow", "Threshold", "Threshold", 0.75, 1),
+                 [("Glow", "Gain", "Glow Amount", 3, 8),
+                  ("Glow", "Threshold", "Threshold", 0.6, 1),
                   ("Glow", "Blend", "Blend", 1, 1)],
                  tools)
 

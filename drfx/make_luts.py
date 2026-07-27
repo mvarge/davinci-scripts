@@ -151,9 +151,9 @@ def build_luts(out_dir: str = DIST) -> list[str]:
 
 
 def resolve_lut_dir() -> str:
-    return os.path.expanduser(
-        f"~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/{PACK_NAME}"
-    )
+    """Resolve's LUT browser scans the SYSTEM LUT folder on macOS
+    (/Library/..., world-writable by default), not the user-home one."""
+    return f"/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/{PACK_NAME}"
 
 
 def main() -> int:
