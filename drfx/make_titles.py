@@ -18,13 +18,23 @@ drfx/make_effects.py (effects), with the title-specific contract:
   Jitter title uses: StyledText, Font + Style (ControlGroup 2), the
   Red1Clone/Green1Clone/Blue1Clone/Alpha1Clone color aliases (ControlGroup 3)
   and Size.
-- Animation timing: titles do NOT use time/comp.RenderEnd. A title clip can
+- Animation timing: intros do NOT use time/comp.RenderEnd. A title clip can
   be trimmed to any length and the intro should stay snappy, so all intros
   animate over a fixed, Inspector-exposed frame count:
       P = min(1, time / max(1, Params.NumberIn1))
+  Outros are the one sanctioned comp.RenderEnd use: an outro must anchor to
+  the end of the clip whatever its trim, so it counts down frames remaining:
+      Pout = min(1, (comp.RenderEnd - time) / max(1, frames))
   Stock titles use frame-keyed BezierSplines + KeyframeStretcher instead;
   expressions are used here because they are the proven pattern in this repo
   and need no keyframe surgery when retimed.
+- TextPlus shading elements: ElementShape<N> is the "Appearance" combo,
+  serialized 0-based (live probe: {0 Text Fill, 1 Text Outline, 2 Border
+  Fill, 3 Border Outline}). Element 1 defaults to Text Fill — do NOT emit
+  ElementShape1 = 1 (that turns every title into hollow outlines; the stock
+  Jitter title only does it on a hidden displacement-source layer).
+  Elements 2-8 carry preset UI roles (2 = red outline, 4 = shadow, ...), so
+  stock templates just flip Enabled<N> without setting ElementShape<N>.
 - Output alpha: fade-ins go through a Merge over a fully transparent
   Background (all four TopLeft channels 0) so alpha fades with the text.
   A BrightnessContrast Gain fade would dim RGB but leave alpha solid.
@@ -200,12 +210,14 @@ def text_tool(name: str = "Txt", extra: dict[str, str] | None = None,
               text: str = "TITLE", font: str = "Open Sans", style: str = "Bold",
               size: float = 0.12, pos: tuple[int, int] = (-330, 33),
               last: bool = False) -> str:
-    """A TextPlus with the stock-template baseline serialization."""
+    """A TextPlus with the stock-template baseline serialization.
+
+    NB: no ElementShape1 — element 1 must stay at its default (0, Text Fill).
+    """
     inputs: dict[str, str] = {
         "Width": "Input { Value = 1920, }",
         "Height": "Input { Value = 1080, }",
         "UseFrameFormatSettings": "Input { Value = 1, }",
-        "ElementShape1": "Input { Value = 1, }",
         "StyledText": f'Input {{ Value = "{text}", }}',
         "Font": f'Input {{ Value = "{font}", }}',
         "Style": f'Input {{ Value = "{style}", }}',
@@ -380,11 +392,17 @@ def scan_smear_setting() -> str:
 
 
 def flicker_neon_setting() -> str:
-    """Outlined text with a soft glow buzzing on like a faulty neon sign:
-    blend flickers via beating sines while ramping up, steadies at full.
-    Outline color exposed separately from the fill."""
-    flicker = (f"min(1, 0.25 + 0.75 * {P}) * "
-               f"(1 - Params.NumberIn2 * (1 - {P}) * "
+    """Outlined text with a soft glow buzzing on like a faulty neon sign at
+    BOTH ends: flickers up over the intro, burns steady through the middle,
+    then flickers back out anchored to the end of the clip (comp.RenderEnd
+    countdown), whatever its trimmed length. Outline color exposed
+    separately from the fill."""
+    # Q mirrors P from the tail: 1 through the middle, ramps to 0 at the end.
+    q = "min(1, (comp.RenderEnd - time) / max(1, Params.NumberIn1))"
+    # steady = the dimmer envelope; activity = 1 near either end, 0 mid-clip
+    steady = f"min(1, 0.25 + 0.75 * min({P}, {q}))"
+    activity = f"min(1, (1 - {P}) + (1 - {q}))"
+    flicker = (f"{steady} * (1 - Params.NumberIn2 * {activity} * "
                f"(0.5 + 0.5 * sin(time * 9.4) * sin(time * 23.1)))")
     tools = "\n".join([
         params_tool([("Intro Frames", 20), ("Flicker Amount", 0.8)]),

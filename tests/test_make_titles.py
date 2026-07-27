@@ -45,9 +45,23 @@ class TestTitleStructure:
 
     def test_no_transition_progress_expressions(self):
         """Intros animate over Inspector-set frame counts, not clip length —
-        comp.RenderEnd would break when a title is trimmed long."""
+        comp.RenderEnd would break when a title is trimmed long. The one
+        sanctioned use is an OUTRO, which must anchor to the clip's end:
+        only as a `comp.RenderEnd - time` frames-remaining countdown."""
         for name, gen in make_titles.TITLES.items():
-            assert "comp.RenderEnd" not in gen(), name
+            content = gen()
+            for expr in re.findall(r'Expression = "([^"]+)"', content):
+                for m in re.finditer(r"comp\.RenderEnd\s*(.)", expr):
+                    assert m.group(1) == "-", (
+                        f"{name}: comp.RenderEnd only allowed as an outro "
+                        f"countdown (comp.RenderEnd - time): {expr}"
+                    )
+
+    def test_flicker_neon_has_intro_and_outro(self):
+        """Flicker Neon must flicker at both ends: intro ramp on `time` and
+        an outro countdown anchored to comp.RenderEnd."""
+        content = make_titles.TITLES["Flicker Neon"]()
+        assert "comp.RenderEnd - time" in content
 
     def test_intros_are_bounded(self):
         """Every time-driven intro must saturate via min(1, ...) so the title
@@ -63,6 +77,16 @@ class TestTitleStructure:
                 assert "min(1," in expr or "sin(" in expr, (
                     f"{name}: unbounded time expression: {expr}"
                 )
+
+    def test_text_fill_is_solid(self):
+        """ElementShape1 = 1 switches shading element 1 from Text Fill to
+        Text Outline (live probe: MultiButton {0 Fill, 1 Outline, 2 Border
+        Fill, 3 Border Outline}) — every title rendered hollow. Element 1
+        must stay at its default."""
+        for name, gen in make_titles.TITLES.items():
+            assert "ElementShape1" not in gen(), (
+                f"{name}: ElementShape1 turns the fill into an outline"
+            )
 
     def test_no_version_pinned_ofx(self):
         for name, gen in make_titles.TITLES.items():
