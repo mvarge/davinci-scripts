@@ -494,6 +494,160 @@ def film_burn_setting(seq_folder: str, first_file: str, frames: int,
                  tools)
 
 
+def rgb_split_slam_setting() -> str:
+    """Metal: at the cut, the image shreds into R/G/B layers that fly apart
+    horizontally and slam back together. Chromatic violence, zero OFX."""
+    env = ENVELOPE  # 0->1->0 peaking at the cut
+    # channel isolation enum values (ChannelBoolean): 5/6/7 = BG channel, 15 = Black
+    def channel_iso(name, tor, tog, tob, pos):
+        return f"""\
+\t\t\t\t{name} = ChannelBoolean {{
+\t\t\t\t\tCtrlWShown = false,
+\t\t\t\t\tInputs = {{
+\t\t\t\t\t\tToRed = Input {{ Value = {tor}, }},
+\t\t\t\t\t\tToGreen = Input {{ Value = {tog}, }},
+\t\t\t\t\t\tToBlue = Input {{ Value = {tob}, }},
+\t\t\t\t\t\tToAlpha = Input {{ Value = 8, }},
+\t\t\t\t\t\tBackground = Input {{ SourceOp = "Dissolve1", Source = "Output", }},
+\t\t\t\t\t\tForeground = Input {{ SourceOp = "Dissolve1", Source = "Output", }},
+\t\t\t\t\t}},
+\t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ {pos[0]}, {pos[1]} }} }},
+\t\t\t\t}},"""
+
+    shift = "Params.NumberIn3 * Params.NumberIn1 * 0.05"
+    tools = "\n".join([
+        params_tool([("Split Amount", 1), ("Blur Amount", 1)],
+                    [("Envelope", env)]),
+        transform("XfA", {"Size": "Input { Value = 1, }"}, (-220, 0)),
+        transform("XfB", {"Size": "Input { Value = 1, }"}, (-220, 66)),
+        dissolve("Dissolve1", "XfA", "XfB", HARD_SWITCH, pos=(-110, 33)),
+        channel_iso("IsoRed", 5, 15, 15, (0, 0)),
+        channel_iso("IsoGreen", 15, 6, 15, (0, 33)),
+        channel_iso("IsoBlue", 15, 15, 7, (0, 66)),
+        transform("ShiftRed", {
+            "Center": expr_input(f"Point(0.5 + {shift}, 0.5)", "{ 0.5, 0.5 }"),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (110, 0), source=("IsoRed", "Output")),
+        transform("ShiftBlue", {
+            "Center": expr_input(f"Point(0.5 - {shift}, 0.5)", "{ 0.5, 0.5 }"),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (110, 66), source=("IsoBlue", "Output")),
+        f"""\
+\t\t\t\tMergeRG = Merge {{
+\t\t\t\t\tCtrlWShown = false,
+\t\t\t\t\tInputs = {{
+\t\t\t\t\t\tApplyMode = Input {{ Value = FuID {{ "Screen" }}, }},
+\t\t\t\t\t\tPerformDepthMerge = Input {{ Value = 0, }},
+\t\t\t\t\t\tBackground = Input {{ SourceOp = "IsoGreen", Source = "Output", }},
+\t\t\t\t\t\tForeground = Input {{ SourceOp = "ShiftRed", Source = "Output", }},
+\t\t\t\t\t}},
+\t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 220, 33 }} }},
+\t\t\t\t}},
+\t\t\t\tMergeRGB = Merge {{
+\t\t\t\t\tCtrlWShown = false,
+\t\t\t\t\tInputs = {{
+\t\t\t\t\t\tApplyMode = Input {{ Value = FuID {{ "Screen" }}, }},
+\t\t\t\t\t\tPerformDepthMerge = Input {{ Value = 0, }},
+\t\t\t\t\t\tBackground = Input {{ SourceOp = "MergeRG", Source = "Output", }},
+\t\t\t\t\t\tForeground = Input {{ SourceOp = "ShiftBlue", Source = "Output", }},
+\t\t\t\t\t}},
+\t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 330, 33 }} }},
+\t\t\t\t}},""",
+        blur("PostBlur", "MergeRGB",
+             "Params.NumberIn3 * 6 * Params.NumberIn2", pos=(440, 33), last=True),
+    ])
+    return macro("RGBSplitSlam", ("XfA", "Input"), ("XfB", "Input"), "PostBlur",
+                 [("Params", "NumberIn1", "Split Amount", 1, 3),
+                  ("Params", "NumberIn2", "Blur Amount", 1, 2)],
+                 tools)
+
+
+def shake_slam_setting() -> str:
+    """Metal: B-side lands with a decaying impact shake — like the cut hit a
+    downbeat. Deterministic pseudo-random jolt from stacked sines (expression
+    grammar has sin(); no randomness needed, and it renders identically
+    every time)."""
+    # decaying shake, second half only: amplitude (1-p2)^2 where p2 = progress in 2nd half
+    p2 = f"(2*({T})-1)"  # 0..1 across second half
+    amp = f"Params.NumberIn1 * 0.03 * ((1-{p2})^2)"
+    shake_x = f"iif({T} < 0.5, 0.5, 0.5 + {amp} * sin({p2}*47))"
+    shake_y = f"iif({T} < 0.5, 0.5, 0.5 + {amp} * 0.6 * sin({p2}*31+2))"
+    # A-side: quick push-in before the cut
+    size_a = f"iif({T} < 0.5, 1 + 0.12 * {EASE_IN_CUBIC_FIRST_HALF}, 1.12)"
+    size_b = f"iif({T} < 0.5, 1.05, 1.05 - 0.05 * {p2})"
+
+    tools = "\n".join([
+        params_tool([("Shake Amount", 1), ("Blur Amount", 1)],
+                    [("Envelope", ENVELOPE)]),
+        transform("XfA", {
+            "Size": expr_input(size_a, 1),
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (-110, 0)),
+        transform("XfB", {
+            "Center": expr_input(f"Point({shake_x}, {shake_y})", "{ 0.5, 0.5 }"),
+            "Size": expr_input(size_b, 1),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (-110, 66)),
+        dissolve("Dissolve1", "XfA", "XfB", HARD_SWITCH),
+        blur("PostBlur", "Dissolve1",
+             "Params.NumberIn3 * 8 * Params.NumberIn2", pos=(110, 33), last=True),
+    ])
+    return macro("ShakeSlam", ("XfA", "Input"), ("XfB", "Input"), "PostBlur",
+                 [("Params", "NumberIn1", "Shake Amount", 1, 3),
+                  ("Params", "NumberIn2", "Blur Amount", 1, 2)],
+                 tools)
+
+
+def crush_zoom_setting() -> str:
+    """Metal/urban: violent zoom-through — A-side zooms IN hard while
+    rotating, B-side arrives zoomed WAY out and crash-lands to rest.
+    More brutal than Zoom Punch: bigger travel, opposing rotation."""
+    zoom_a = f"iif({T} < 0.5, 1 + 1.5 * Params.NumberIn1 * {EASE_IN_CUBIC_FIRST_HALF}, 2.5)"
+    angle_a = f"iif({T} < 0.5, 8 * Params.NumberIn1 * {EASE_IN_CUBIC_FIRST_HALF}, 8)"
+    zoom_b = f"iif({T} < 0.5, 0.4, 1 - 0.6 * {EASE_OUT_CUBIC_SECOND_HALF})"
+    angle_b = f"iif({T} < 0.5, -8, -8 * {EASE_OUT_CUBIC_SECOND_HALF})"
+
+    tools = "\n".join([
+        params_tool([("Intensity", 1), ("Blur Amount", 1)],
+                    [("Envelope", ENVELOPE)]),
+        transform("XfA", {
+            "Size": expr_input(zoom_a, 1),
+            "Angle": expr_input(angle_a),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (-110, 0)),
+        transform("XfB", {
+            "Size": expr_input(zoom_b, 1),
+            "Angle": expr_input(angle_b),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (-110, 66)),
+        dissolve("Dissolve1", "XfA", "XfB", HARD_SWITCH),
+        blur("PostBlur", "Dissolve1",
+             "Params.NumberIn3 * 16 * Params.NumberIn2",
+             "Params.NumberIn3 * 16 * Params.NumberIn2", pos=(110, 33), last=True),
+    ])
+    return macro("CrushZoom", ("XfA", "Input"), ("XfB", "Input"), "PostBlur",
+                 [("Params", "NumberIn1", "Intensity", 1, 2),
+                  ("Params", "NumberIn2", "Blur Amount", 1, 2)],
+                 tools)
+
+
 # Registry: display name -> generator callable
 TRANSITIONS: dict = {
     "Zoom Punch": zoom_punch_setting,
@@ -503,6 +657,9 @@ TRANSITIONS: dict = {
     "Whip Pan Up": lambda: whip_pan_setting("Up"),
     "Whip Pan Down": lambda: whip_pan_setting("Down"),
     "Flash Cut": flash_cut_setting,
+    "RGB Split Slam": rgb_split_slam_setting,
+    "Shake Slam": shake_slam_setting,
+    "Crush Zoom": crush_zoom_setting,
 }
 for _i, (_folder, _first, _frames) in enumerate(BURNS, start=1):
     TRANSITIONS[f"Film Burn {_i}"] = (
