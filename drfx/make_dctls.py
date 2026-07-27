@@ -6,11 +6,24 @@ that .cube LUTs can't express. Spec source: Resolve's official Developer
 README (/Library/Application Support/Blackmagic Design/DaVinci Resolve/
 Developer/DaVinciCTL/) — see repo docs. Key rules the emitter follows:
 
-- `#line 2` first so compile-error line numbers match the file.
+- No `#line` directive — Resolve's preprocessor rejects it (21.0.3).
 - DEFINE_UI_PARAMS at the top: bare unquoted labels, no trailing semicolon.
+- UI param names are injected as file-scope globals, so no helper function
+  parameter or local may reuse one. Violating this yields the misleading
+  error "main DCTL function's return value must be float3 to represent RGB".
+  All shared-helper params are `h`-prefixed to guarantee no collision.
 - Every float literal f-suffixed (unsuffixed doubles break Metal/OpenCL).
 - Underscore-prefixed math only (_powf, _mix, _saturatef...); helpers are
-  __DEVICE__ and defined before the entry function.
+  __DEVICE__ and defined before the entry function. Note `_mix` IS generic
+  over float/float2/float3/float4 per the official README — the `lerp3`
+  helper predates that discovery and is kept only because the emitted files
+  are verified working; the inline comment claiming otherwise is stale.
+- The entry function's `return` must NOT be a direct function call. Resolve
+  infers the return type by textually inspecting the return statement, so
+  `return lerp3(a, b, t);` fails with "main DCTL function's return value must
+  be float3 to represent RGB" even though the callee is declared float3.
+  Assign to a local first, then `return make_float3(v.x, v.y, v.z);` (or
+  return a bare float3 variable — both verified OK on 21.0.3).
 - Entry signature verbatim: transform(int p_Width, int p_Height, int p_X,
   int p_Y, float p_R, float p_G, float p_B) returning make_float3.
 - UI params only appear via the ResolveFX DCTL plugin (Color page > OpenFX >
@@ -34,34 +47,43 @@ PACK_NAME = "mvarge DCTL"
 DIST = os.path.join(os.path.dirname(__file__), "..", "dist", "dctl")
 
 # Shared __DEVICE__ helpers prepended to every DCTL that requests them.
+#
+# CRITICAL: every helper parameter is `h`-prefixed. DEFINE_UI_PARAMS injects
+# its names as file-scope globals, so a helper parameter sharing a UI param
+# name (e.g. `float amount`) breaks the build. Resolve reports this as the
+# thoroughly misleading "main DCTL function's return value must be float3 to
+# represent RGB" — it does NOT point at the offending line. Live-verified on
+# 21.0.3: a helper taking `float amount` alongside
+# DEFINE_UI_PARAMS(amount, ...) fails; renaming the parameter fixes it.
+# test_no_ui_param_shadowing() enforces this.
 HELPERS = """\
-__DEVICE__ float luma709(float3 rgb)
+__DEVICE__ float luma709(float3 hRgb)
 {
-    return 0.2126f * rgb.x + 0.7152f * rgb.y + 0.0722f * rgb.z;
+    return 0.2126f * hRgb.x + 0.7152f * hRgb.y + 0.0722f * hRgb.z;
 }
 
-__DEVICE__ float3 lerp3(float3 a, float3 b, float t)
+__DEVICE__ float3 lerp3(float3 hA, float3 hB, float hT)
 {
     // manual vector lerp: _mix() overloads with mixed float3/float args
     // are not portable across CUDA/OpenCL/Metal backends
-    return a + (b - a) * _saturatef(t);
+    return hA + (hB - hA) * _saturatef(hT);
 }
 
-__DEVICE__ float3 sat_adjust(float3 rgb, float amount)
+__DEVICE__ float3 sat_adjust(float3 hRgb, float hAmt)
 {
-    // amount 1 = unchanged, 0 = grayscale, >1 boosts
-    float y = luma709(rgb);
-    float a = _clampf(amount, 0.0f, 4.0f);
-    float3 grey = make_float3(y, y, y);
-    return grey + (rgb - grey) * a;
+    // hAmt 1 = unchanged, 0 = grayscale, >1 boosts
+    float hY = luma709(hRgb);
+    float hK = _clampf(hAmt, 0.0f, 4.0f);
+    float3 hGrey = make_float3(hY, hY, hY);
+    return hGrey + (hRgb - hGrey) * hK;
 }
 
-__DEVICE__ float scurve(float x, float strength)
+__DEVICE__ float scurve(float hX, float hStrength)
 {
-    // smoothstep-based contrast around mid; strength 0 = identity
-    float xc = _saturatef(x);
-    float s = xc * xc * (3.0f - 2.0f * xc);
-    return _mix(xc, s, _saturatef(strength));
+    // smoothstep-based contrast around mid; hStrength 0 = identity
+    float hXc = _saturatef(hX);
+    float hS = hXc * hXc * (3.0f - 2.0f * hXc);
+    return _mix(hXc, hS, _saturatef(hStrength));
 }
 """
 
@@ -107,7 +129,8 @@ def punch_dctl() -> str:
     graded.y = scurve(rgb.y, contrast);
     graded.z = scurve(rgb.z, contrast);
     graded = sat_adjust(graded, saturation);
-    return lerp3(rgb, graded, amount);"""
+    float3 out = lerp3(rgb, graded, amount);
+    return make_float3(out.x, out.y, out.z);"""
     return dctl_file(ui, body)
 
 

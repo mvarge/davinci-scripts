@@ -1,6 +1,17 @@
 // DCTL runtime stub — approximates Resolve's DCTL environment closely enough
 // for clang to catch syntax/type errors in generated .dctl files.
 // Usage: clang++ -std=c++14 -fsyntax-only -include dctl_stub.h <file.dctl as cpp>
+//
+// SCOPE / KNOWN LIMITATION: passing this check does NOT mean Resolve will
+// build the DCTL. Resolve's own parser is in places textual rather than
+// semantic, so it rejects constructs clang accepts. Live-verified example
+// (21.0.3): `return someHelper(rgb, t);` in the entry function fails with
+// "main DCTL function's return value must be float3 to represent RGB" even
+// though the helper is declared float3 — clang compiles it happily. Rules of
+// that kind are enforced separately by regex assertions in
+// tests/test_make_dctls.py. Treat this stub as a fast first filter for
+// ordinary type/syntax mistakes, not as proof of a working DCTL. Only a
+// live Resolve build proves that.
 #pragma once
 
 #define __DEVICE__ inline
@@ -43,8 +54,12 @@ inline float _fmod(float x, float y) { return fmodf(x, y); }
 inline float _cosf(float x) { return cosf(x); }
 inline float _sinf(float x) { return sinf(x); }
 inline float _mix(float x, float y, float a) { return x + (y - x) * a; }
-// NOTE: deliberately NO float3 overload of _mix — matches the conservative
-// reading of the README; generated code must not rely on vector _mix.
+// The official README documents _mix as generic: "T _mix(T x, T y, float a)"
+// where T is float, float2, float3 or float4. An earlier version of this stub
+// omitted the vector overloads based on a mistaken reading; they are real.
+inline float2 _mix(float2 x, float2 y, float a) { return {x.x+(y.x-x.x)*a, x.y+(y.y-x.y)*a}; }
+inline float3 _mix(float3 x, float3 y, float a) { return {x.x+(y.x-x.x)*a, x.y+(y.y-x.y)*a, x.z+(y.z-x.z)*a}; }
+inline float4 _mix(float4 x, float4 y, float a) { return {x.x+(y.x-x.x)*a, x.y+(y.y-x.y)*a, x.z+(y.z-x.z)*a, x.w+(y.w-x.w)*a}; }
 
 typedef unsigned int uint;
 inline float RAND(uint seed) { return (seed % 1000u) / 1000.0f; }

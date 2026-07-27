@@ -53,6 +53,35 @@ class TestDctlStructure:
         for name, gen in make_dctls.DCTLS.items():
             assert re.search(r"return (make_float3\(|_mix\(|tinted)", gen()), name
 
+    def test_entry_return_is_not_a_function_call(self):
+        """The entry function's return must not be a bare function call.
+
+        Live-verified on 21.0.3 by differential probe: two DCTLs identical
+        except for the return statement — `return helper_vec(rgb, amount);`
+        FAILED while `float3 out = helper_vec(rgb, amount); return
+        make_float3(out.x, out.y, out.z);` PASSED. Resolve infers the entry
+        return type by textually inspecting the return expression rather than
+        resolving the callee's declared type, and reports any mismatch as
+        "main DCTL function's return value must be float3 to represent RGB"
+        — an error that names neither the real cause nor a line number.
+
+        Returning a bare float3 variable (`return tinted;`) is also fine.
+        Only a direct call expression breaks it.
+        """
+        call_re = re.compile(r"^\s*return\s+(?!make_float3\b)(\w+)\s*\(")
+        for name, gen in make_dctls.DCTLS.items():
+            content = gen()
+            # isolate the entry function body (last occurrence of the sig)
+            body = content.split(ENTRY_SIG, 1)[1]
+            for line in body.splitlines():
+                m = call_re.match(line)
+                assert not m, (
+                    f"{name}: entry returns a direct call to "
+                    f"'{m.group(1)}()'; assign to a local and return "
+                    f"make_float3(...) instead — Resolve will reject this "
+                    f"with a misleading float3 return-type error"
+                )
+
     def test_float_literals_are_f_suffixed(self):
         """Unsuffixed double literals are the #1 Metal/OpenCL compile killer.
         Scan for numeric literals with a decimal point not followed by f
