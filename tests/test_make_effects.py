@@ -11,7 +11,7 @@ import make_effects  # noqa: E402
 
 TOOL_TYPES = (
     r"(?:MacroOperator|Custom|Transform|Merge|LUTBezier|EllipseMask|"
-    r"RectangleMask|FastNoise|ChannelBoolean|BrightnessContrast|SoftGlow|Blur)"
+    r"RectangleMask|FastNoise|ChannelBoolean|BrightnessContrast|SoftGlow|Blur|Displace|TimeStretcher)"
 )
 
 

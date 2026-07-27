@@ -329,6 +329,88 @@ def punch_glow_setting() -> str:
                  tools)
 
 
+def turbulent_displace_setting() -> str:
+    """Organic warp: animated FastNoise drives a Displace on the image —
+    heat-haze / possessed-footage wobble. Speed via FastNoise SeetheRate,
+    scale via noise detail, strength via Displace refraction."""
+    tools = "\n".join([
+        params_tool([("Strength", 0.15), ("Scale", 6), ("Speed", 1)]),
+        tool("Src", "Transform", {
+            "Size": "Input { Value = 1, }",
+        }, (-220, 33)),
+        tool("WarpNoise", "FastNoise", {
+            "UseFrameFormatSettings": "Input { Value = 1, }",
+            "Detail": expr_input("Params.NumberIn2", 6),
+            "Contrast": "Input { Value = 1.2, }",
+            "SeetheRate": expr_input("0.1 * Params.NumberIn3", 0.1),
+            "XScale": "Input { Value = 4, }",
+        }, (-110, 66)),
+        tool("Warp", "Displace", {
+            "Type": "Input { Value = 1, }",
+            "XRefraction": expr_input("Params.NumberIn1", 0.15),
+            "YRefraction": expr_input("Params.NumberIn1", 0.15),
+            "Input": src_input("Src"),
+            "Foreground": src_input("WarpNoise"),
+        }, (0, 33), last=True),
+    ])
+    return macro("TurbulentDisplace", ("Src", "Input"), "Warp",
+                 [("Params", "NumberIn1", "Strength", 0.15, 0.5),
+                  ("Params", "NumberIn2", "Scale", 6, 12),
+                  ("Params", "NumberIn3", "Speed", 1, 4)],
+                 tools)
+
+
+def posterize_time_setting() -> str:
+    """Choppy stop-motion feel: TimeStretcher quantizes source time to every
+    Nth frame. Rate control = frames held per step."""
+    tools = "\n".join([
+        params_tool([("Hold Frames", 3)]),
+        tool("Src", "Transform", {
+            "Size": "Input { Value = 1, }",
+        }, (-110, 0)),
+        f"""\
+\t\t\t\tStepTime = TimeStretcher {{
+\t\t\t\t\tCtrlWShown = false,
+\t\t\t\t\tInputs = {{
+\t\t\t\t\t\tSourceTime = Input {{
+\t\t\t\t\t\t\tValue = 0,
+\t\t\t\t\t\t\tExpression = "floor(time / max(1, Params.NumberIn1)) * max(1, Params.NumberIn1)",
+\t\t\t\t\t\t}},
+\t\t\t\t\t\tInput = Input {{
+\t\t\t\t\t\t\tSourceOp = "Src",
+\t\t\t\t\t\t\tSource = "Output",
+\t\t\t\t\t\t}},
+\t\t\t\t\t}},
+\t\t\t\t\tViewInfo = OperatorInfo {{ Pos = {{ 0, 0 }} }},
+\t\t\t\t}}""",
+    ])
+    return macro("PosterizeTime", ("Src", "Input"), "StepTime",
+                 [("Params", "NumberIn1", "Hold Frames", 3, 12)],
+                 tools)
+
+
+def pump_setting() -> str:
+    """Rhythmic zoom pump: sine-driven scale bump for beat-synced sections.
+    Tune Pump Rate to your BPM (rate = beats per second at 25fps baseline)."""
+    # sine period in frames: fps/rate; using time directly — editors trim
+    # the clip so phase aligns with the beat.
+    size = "1 + Params.NumberIn1 * 0.5 * (0.5 + 0.5 * sin(time * 6.2832 * Params.NumberIn2 / 25))"
+    tools = "\n".join([
+        params_tool([("Pump Amount", 0.08), ("Pump Rate", 2)]),
+        tool("Pump", "Transform", {
+            "Size": expr_input(size, 1),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 270, }",
+        }, (0, 0), last=True),
+    ])
+    return macro("BeatPump", ("Pump", "Input"), "Pump",
+                 [("Params", "NumberIn1", "Pump Amount", 0.08, 0.3),
+                  ("Params", "NumberIn2", "Pump Rate", 2, 8)],
+                 tools)
+
+
 # Registry: display name -> generator callable
 EFFECTS: dict = {
     "Vignette": vignette_setting,
@@ -336,6 +418,9 @@ EFFECTS: dict = {
     "Film Grain": film_grain_setting,
     "Chromatic Aberration": chromatic_aberration_setting,
     "Punch Glow": punch_glow_setting,
+    "Turbulent Displace": turbulent_displace_setting,
+    "Posterize Time": posterize_time_setting,
+    "Beat Pump": pump_setting,
 }
 
 
