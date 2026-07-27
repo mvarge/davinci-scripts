@@ -47,9 +47,17 @@ class TestSettingStructure:
             )
 
     def test_film_burns_reference_existing_sequences(self):
-        """Film Burn loaders point at real JPEG sequence files on this machine."""
+        """Film Burn loaders point at real JPEG sequence files.
+
+        Local-only: the sequences live in Marcelo's media library, which
+        doesn't exist on CI runners — skip there, verify here.
+        """
         import os
 
+        import pytest
+
+        if not os.path.isdir(make_pack.BURN_SEQ_DIR):
+            pytest.skip("burn sequences not present on this machine (CI)")
         for name, gen in make_pack.TRANSITIONS.items():
             if not name.startswith("Film Burn"):
                 continue
