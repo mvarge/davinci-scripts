@@ -26,10 +26,18 @@ class TestDctlStructure:
         for name, gen in make_dctls.DCTLS.items():
             assert len(gen()) > 300, name
 
-    def test_line_directive_first(self):
-        """#line 2 keeps compiler error line numbers accurate."""
+    def test_no_preprocessor_directives(self):
+        """Resolve's DCTL preprocessor rejected a leading #line on 21.0.3
+        ('Error Processing DaVinci CTL') — official samples ship none.
+        First line must be a UI param or code, and no # directives at all."""
         for name, gen in make_dctls.DCTLS.items():
-            assert gen().splitlines()[0] == "#line 2", name
+            content = gen()
+            for line in content.splitlines():
+                assert not line.lstrip().startswith("#"), (
+                    f"{name}: preprocessor directive: {line}"
+                )
+            first = content.splitlines()[0]
+            assert first.startswith("DEFINE_UI_PARAMS") or first.startswith("__"), name
 
     def test_exact_entry_signature(self):
         """The README requires the signature verbatim, parameter names included."""
@@ -129,3 +137,27 @@ class TestBuild:
         for p in paths:
             assert p.endswith(".dctl")
             assert os.path.getsize(p) > 300
+
+
+class TestClangSyntax:
+    """Compile-check every generated DCTL against the stub header with clang.
+    Catches type errors and bad expressions before Resolve ever sees them.
+    Skipped when clang++ is unavailable (e.g. bare CI runners)."""
+
+    @pytest.mark.parametrize("name", list(make_dctls.DCTLS))
+    def test_compiles(self, name, tmp_path):
+        import shutil
+        import subprocess
+
+        clang = shutil.which("clang++") or shutil.which("g++")
+        if not clang:
+            pytest.skip("no C++ compiler available")
+        stub = os.path.join(os.path.dirname(__file__), "..", "drfx", "dctl_stub.h")
+        src = tmp_path / "test.cpp"
+        src.write_text(make_dctls.DCTLS[name]())
+        result = subprocess.run(
+            [clang, "-std=c++14", "-fsyntax-only", "-include", stub,
+             "-x", "c++", str(src)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, f"{name}:\n{result.stderr[:2000]}"

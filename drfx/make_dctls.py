@@ -67,8 +67,13 @@ __DEVICE__ float scurve(float x, float strength)
 
 
 def dctl_file(ui_params: list[str], body: str, tooltips: list[str] = ()) -> str:
-    """Assemble a complete .dctl: #line, UI params, helpers, entry function."""
-    parts = ["#line 2"]
+    """Assemble a complete .dctl: UI params, helpers, entry function.
+
+    Note: no #line directive — Resolve's own shipped samples don't use it,
+    and its DCTL preprocessor is stricter than clang (a leading #line was
+    observed to fail 'Error Processing DaVinci CTL' on 21.0.3 while the
+    same file passed a clang syntax check)."""
+    parts = []
     parts.extend(ui_params)
     parts.extend(tooltips)
     parts.append("")
