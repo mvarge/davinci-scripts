@@ -163,6 +163,24 @@ class TestCaptions:
         assert ebs.build_signature_captions([]) == []
 
 
+class TestCli:
+    def test_default_layout_is_two_line(self):
+        """Only one subtitle track is visible at a time (manual p. 1268), so the
+        default must be the single-track two-line layout, never two-track."""
+        assert ebs.build_parser().parse_args([]).layout == "two-line"
+
+    def test_all_layouts_accepted(self):
+        for layout in ("two-line", "beats-only", "two-track"):
+            assert ebs.build_parser().parse_args(["--layout", layout]).layout == layout
+
+    def test_unknown_layout_rejected(self):
+        with pytest.raises(SystemExit):
+            ebs.build_parser().parse_args(["--layout", "two-tracks"])
+
+    def test_dry_run_defaults_off(self):
+        assert ebs.build_parser().parse_args([]).dry_run is False
+
+
 class TestSrtTimestamp:
     def test_zero(self):
         assert ebs.srt_timestamp(0, 50.0) == "00:00:00,000"

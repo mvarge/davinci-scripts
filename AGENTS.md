@@ -142,5 +142,9 @@ Hard-won constraints — don't relitigate these:
   "Insert Selected Subtitles to Timeline Using Timecode", manual p. 1271).
 - **SRT needs ABSOLUTE timecode** (`marker frame + GetStartFrame()`); marker
   frames from `GetMarkers()` are timeline-relative.
-- **Per-line styling needs two tracks.** In a two-line caption, the
-  Customize Caption route is per-clip (p. 1279) — impractical at scale.
+- **Per-line styling needs Subtitle Regions, not two tracks.** Only ONE subtitle
+  track is visible at a time — enabling one disables all others (manual
+  p. 1268). Regions (R1/R2/R3, max 3) live inside a single track and each has
+  its own font/position (p. 1283–1284), but there's no region API and
+  insert-by-timecode always lands in R1. Marcelo settled on `two-line` with
+  both lines the same size, spaced via Line Spacing — that's the default.

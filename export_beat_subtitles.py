@@ -29,21 +29,38 @@ PREREQUISITES
 
 LAYOUT MODES
 ------------
---layout two-track  (default, recommended)
-    Writes TWO files. ST1 = one caption per bar holding the signature for the
-    bar's full duration. ST2 = one caption per beat. Import onto two subtitle
-    tracks and style each independently (different size, Position Y, colour).
-    This is the only way to style the signature differently from the beat
-    counter without per-caption work.
-
---layout two-line
-    ONE file, each caption two lines ("6/4" newline "3/4"). Simpler to import,
-    but track styling hits both lines equally: you can space them with Line
-    Spacing, but cannot make one line bigger. Per-line styling needs the
-    Customize Caption checkbox per clip (p. 1279) -- impractical at 255 clips.
+--layout two-line  (default)
+    ONE file, ONE subtitle track, each caption two lines ("6/4" newline "3/4").
+    Both lines share font and size; Line Spacing (Inspector > Track) pushes them
+    apart. This is the default because it is the only layout that needs a single
+    subtitle track -- see the ONE VISIBLE TRACK note below.
 
 --layout beats-only
     ONE file, single line "3/4". Just the beat counter.
+
+--layout two-track
+    Writes TWO files: ST1 = one caption per bar holding the signature, ST2 = one
+    caption per beat. NOT generally usable: only one subtitle track can be
+    visible at a time (manual PDF p. 1268), so the two tracks cannot both be on
+    screen. Kept for the Subtitle Regions route (below) and for exporting the
+    bar map on its own.
+
+ONE VISIBLE TRACK (the constraint that shapes all of this)
+----------------------------------------------------------
+Only one subtitle track is visible at any time -- enabling one DISABLES all
+others (manual PDF p. 1268). So "put the signature on one track and the beats on
+another" does not work, however tempting it looks.
+
+The supported way to get two independently-styled lines on screen at once is
+Subtitle Regions: up to three regions (R1/R2/R3) INSIDE a single track, each
+with its own Captions list and style settings including font and text position
+(p. 1283-1284). Right-click inside the track body (not the header) > Add
+Subtitle Region, then drag captions between regions. There is no scripting API
+for regions, and insert-by-timecode always lands in R1, so populating R2 is
+manual dragging. Only worth it if the two lines must differ in size.
+
+If both lines can share a size -- the common case -- use the default two-line
+layout and space them with Line Spacing. Far less work.
 
 BEAT SUBDIVISION
 ----------------
@@ -72,16 +89,16 @@ IMPORTING (Resolve UI -- scripting has no subtitle-import API)
 2. Right-click the imported clip > "Insert Selected Subtitles to Timeline Using
    Timecode". It decomposes into individual captions and creates the subtitle
    track automatically (manual PDF p. 1271).
-3. Repeat for the second file in two-track mode. It lands on its own track.
-4. Click the subtitle TRACK HEADER > Inspector > Track panel. Set font, size,
+3. Click the subtitle TRACK HEADER > Inspector > Track panel. Set font, size,
    colour, Position Y, Line Spacing, plus Drop Shadow / Stroke / Background.
-   Applies to every caption on that track.
-5. Optional: option menu (3 dots) > Save Track as Preset to reuse next time.
+   Applies to every caption on that track. Raise Line Spacing to separate the
+   signature from the beat count.
+4. Optional: option menu (3 dots) > Save Track as Preset to reuse next time.
 
 USAGE
 -----
     python3 export_beat_subtitles.py
-    python3 export_beat_subtitles.py --layout two-line
+    python3 export_beat_subtitles.py --layout beats-only
     python3 export_beat_subtitles.py --outdir ~/Desktop --prefix mysong
     python3 export_beat_subtitles.py --dry-run
 
@@ -184,7 +201,7 @@ def beat_frames(bar: Bar) -> list[tuple[int, int]]:
 
 
 def build_signature_captions(bars: list[Bar]) -> list[Caption]:
-    """One caption per bar, spanning the whole bar. For ST1 in two-track mode."""
+    """One caption per bar, spanning the whole bar. Used by --layout two-track."""
     return [Caption(b.start, b.end, f"{b.numerator}/{b.denominator}") for b in bars]
 
 
@@ -269,18 +286,19 @@ def write_file(path: str, text: str, dry_run: bool) -> None:
     print(f"  wrote {path}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Export beat-counter SRT subtitles from time-signature markers.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--layout",
-        choices=("two-track", "two-line", "beats-only"),
-        default="two-track",
-        help="two-track: separate signature + beat files, styled independently "
-        "(default). two-line: one file, signature above beat. beats-only: beat "
-        "counter only.",
+        choices=("two-line", "beats-only", "two-track"),
+        default="two-line",
+        help="two-line: one file/one track, signature above beat (default). "
+        "beats-only: beat counter only. two-track: separate signature + beat "
+        "files -- only usable via Subtitle Regions, since just one subtitle "
+        "track can be visible at a time.",
     )
     parser.add_argument("--outdir", default=os.path.expanduser("~/Desktop"),
                         help="Output directory (default: ~/Desktop)")
@@ -288,7 +306,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="Filename prefix (default: sanitized timeline name)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Report what would be written without writing")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     from resolve_kit.connection import connect
 
@@ -319,6 +341,12 @@ def main(argv: list[str] | None = None) -> int:
         os.makedirs(outdir, exist_ok=True)
 
     if args.layout == "two-track":
+        print(
+            "NOTE: only one subtitle track can be visible at a time (manual\n"
+            "      p. 1268), so these two files cannot both show on screen as\n"
+            "      separate tracks. Use Subtitle Regions within one track, or\n"
+            "      switch to --layout two-line.\n"
+        )
         outputs = [
             (f"{prefix}_ST1_signature.srt", build_signature_captions(bars)),
             (f"{prefix}_ST2_beats.srt", build_beat_captions(bars)),
@@ -341,7 +369,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "\nImport: Media Pool > right-click > Import Subtitle, then right-click the\n"
         "clip > 'Insert Selected Subtitles to Timeline Using Timecode'.\n"
-        "Style once via the subtitle TRACK HEADER > Inspector > Track panel."
+        "Style once via the subtitle TRACK HEADER > Inspector > Track panel;\n"
+        "raise Line Spacing to separate the signature from the beat count."
     )
     return 1 if failed else 0
 

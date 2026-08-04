@@ -509,6 +509,16 @@ verify the effect afterward (file exists, track count changed, etc.).
   "Insert Selected Subtitles to Timeline Using Timecode" (manual p. 1271),
   which places captions by **absolute** timecode. See
   `export_beat_subtitles.py`.
+- **Only ONE subtitle track can be visible at a time.** Enabling one *disables
+  all others* (manual p. 1268) — this is a UI/format rule, not a scripting
+  quirk, and it kills any "signature on ST1, beat counter on ST2" design. Two
+  independently-styled lines on screen at once requires **Subtitle Regions**:
+  up to 3 (R1/R2/R3) inside a *single* track, each with its own Captions list,
+  font and text position (p. 1283–1284). Added via right-click in the track
+  **body** (not the header) > Add Subtitle Region. **No region API exists**, and
+  insert-by-timecode always lands in R1, so filling R2 is manual dragging.
+  Prefer a single two-line caption + Line Spacing unless the lines must differ
+  in size.
 - `Timeline.CreateSubtitlesFromAudio({...})` exists and is scriptable
   (language/preset/chars-per-line/line-break constants — see the official
   Developer README §"autoCaptionSettings"). `Timeline.Export` can emit SRT.

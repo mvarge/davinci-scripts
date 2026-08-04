@@ -130,8 +130,7 @@ exactly on these markers.
 **3. Export the SRTs.**
 
 ```bash
-python3 export_beat_subtitles.py                    # two-track (recommended)
-python3 export_beat_subtitles.py --layout two-line  # one file, two lines
+python3 export_beat_subtitles.py                      # two-line (default)
 python3 export_beat_subtitles.py --layout beats-only
 python3 export_beat_subtitles.py --dry-run
 ```
@@ -142,13 +141,30 @@ Files land in `~/Desktop` by default (`--outdir` to change).
 pick the `.srt`. Then right-click the imported clip → **"Insert Selected
 Subtitles to Timeline Using Timecode"** (manual PDF p. 1271). It decomposes
 into individual captions, aligns by timecode, and creates the subtitle track.
-Repeat for the second file in two-track mode; it lands on its own track.
 
 **5. Style once.** Click the subtitle **track header** → Inspector → **Track**
 panel. Font, size, colour, Position Y, Line Spacing, Drop Shadow, Stroke and
 Background box apply to *every* caption on the track (manual PDF p. 1278).
+Raise **Line Spacing** to separate the signature from the beat count.
 Option menu (3 dots) → **Save Track as Preset** to reuse on the next song
 (p. 1280).
+
+### Only one subtitle track is visible at a time
+
+This shapes the whole design: enabling one subtitle track **disables all
+others** (manual PDF p. 1268). Splitting the signature onto one track and the
+beat counter onto another therefore does *not* work — only one would ever show.
+
+The supported way to get two independently-styled lines on screen at once is
+**Subtitle Regions**: up to three (R1/R2/R3) *inside a single track*, each with
+its own Captions list and style settings including font and text position
+(p. 1283–1284). Right-click inside the track **body** (not the header) → **Add
+Subtitle Region**, then drag captions between regions.
+
+Regions are only worth it if the two lines must differ in **size**. There's no
+scripting API for them, and insert-by-timecode always lands in R1, so populating
+R2 means dragging by hand. If both lines can share a size — the common case —
+use the default `two-line` layout and space them with Line Spacing.
 
 ### Why subtitle tracks, not Text+ titles
 
@@ -166,13 +182,13 @@ Option menu (3 dots) → **Save Track as Preset** to reuse on the next song
 
 | Mode | Files | On screen | Styling |
 |------|-------|-----------|---------|
-| `two-track` | 2 | `6/4` on ST1, `3/4` on ST2 | Each track styled independently — different size/colour/position per line |
-| `two-line` | 1 | `6/4` newline `3/4` | One track; Line Spacing separates them, but both lines share size/colour |
+| `two-line` *(default)* | 1 | `6/4` newline `3/4` | One track; Line Spacing separates the lines, both share font/size |
 | `beats-only` | 1 | `3/4` | Single track |
+| `two-track` | 2 | signature and beats separately | Not usable as two tracks (see above); for the Regions route, or to export the bar map alone |
 
-`two-track` is the default because per-line styling in `two-line` requires the
-**Customize Caption** checkbox on each clip individually (manual PDF p. 1279),
-which is impractical at hundreds of captions.
+Per-line styling within a `two-line` caption needs the **Customize Caption**
+checkbox on each clip individually (manual PDF p. 1279) — impractical at
+hundreds of captions. Use Regions instead if you need it.
 
 ### Details that matter
 
