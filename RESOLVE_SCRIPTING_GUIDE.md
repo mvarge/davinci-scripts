@@ -473,6 +473,11 @@ verify the effect afterward (file exists, track count changed, etc.).
   practice), there's no API to read/set that selector, and locking V1 makes
   the insert *fail* rather than fall through to V2. Inserted titles/generators
   also can't be moved afterward (no MediaPoolItem).
+  `SetCurrentTrackIndex("video", n)` looks like the escape hatch but is
+  fabricated — `hasattr` is True, calling it returns `None`, and the insert
+  still lands on V1 (verified 21.0.3 with a freshly added, empty V2).
+  Inserted **titles default to 250 frames**, so bulk inserts at short
+  intervals overlap heavily and there is no duration setter to fix it.
 - **`GrabStill`/`ExportStills` need settle time and don't report the output
   filename.** GrabStill requires the Color page with a clip under the
   playhead; ExportStills wants the Gallery open. Sleep briefly (~0.3–0.5 s)
@@ -498,6 +503,12 @@ verify the effect afterward (file exists, track count changed, etc.).
   restyles the whole track, overriding Inspector styling — custom templates
   work too. Before designing a scripted workaround for a "missing" feature,
   grep the manual for the user-facing name first.
+- **No subtitle *import* API.** Nothing inserts an `.srt` onto a subtitle
+  track; `MediaPool.ImportMedia` won't take one either. Scripts can only write
+  the SRT file — the user then does Media Pool > Import Subtitle > right-click >
+  "Insert Selected Subtitles to Timeline Using Timecode" (manual p. 1271),
+  which places captions by **absolute** timecode. See
+  `export_beat_subtitles.py`.
 - `Timeline.CreateSubtitlesFromAudio({...})` exists and is scriptable
   (language/preset/chars-per-line/line-break constants — see the official
   Developer README §"autoCaptionSettings"). `Timeline.Export` can emit SRT.

@@ -104,9 +104,88 @@ PYTHONPATH=. python3 tests/live_smoke.py --full
 - **`create_beat_markers.py`** — reads section markers named with beat counts
   (`6/4`, `10/8`, `4`) and fills in evenly-spaced beat sub-markers between
   them. Supports `--dry-run`, `--clear`, `--color`.
+- **`export_beat_subtitles.py`** — reads the same time-signature markers and
+  exports SRT files that put a bar+beat counter on screen (`6/4` over `3/4`),
+  following every meter change. See
+  [On-screen bar/beat counters](#on-screen-barbeat-counters) below.
 - **`copy_text_style.py`** — copies the full visual style (font, shading
   elements, outline, shadow, spacing) from the first Text+ on the timeline to
   every other Text+, preserving each item's text. Supports `--dry-run`.
+
+## On-screen bar/beat counters
+
+Workflow for songs in shifting time signatures (a metronome/click timeline):
+put a counter on screen that always shows the current bar's signature and which
+beat of that bar you're on.
+
+**1. Mark the bars.** One marker per bar, on the downbeat, with the marker
+**name** set to that bar's time signature (`6/4`, `5/8`, `7/4`). The last marker
+only terminates the previous bar and produces no captions.
+
+**2. Optional — beat markers.** `create_beat_markers.py` fills in a sub-marker
+per beat, useful for eyeballing the grid in the timeline. Not required by the
+export; both scripts use identical subdivision arithmetic, so captions land
+exactly on these markers.
+
+**3. Export the SRTs.**
+
+```bash
+python3 export_beat_subtitles.py                    # two-track (recommended)
+python3 export_beat_subtitles.py --layout two-line  # one file, two lines
+python3 export_beat_subtitles.py --layout beats-only
+python3 export_beat_subtitles.py --dry-run
+```
+
+Files land in `~/Desktop` by default (`--outdir` to change).
+
+**4. Import.** Media Pool → right-click empty space → **Import Subtitle** →
+pick the `.srt`. Then right-click the imported clip → **"Insert Selected
+Subtitles to Timeline Using Timecode"** (manual PDF p. 1271). It decomposes
+into individual captions, aligns by timecode, and creates the subtitle track.
+Repeat for the second file in two-track mode; it lands on its own track.
+
+**5. Style once.** Click the subtitle **track header** → Inspector → **Track**
+panel. Font, size, colour, Position Y, Line Spacing, Drop Shadow, Stroke and
+Background box apply to *every* caption on the track (manual PDF p. 1278).
+Option menu (3 dots) → **Save Track as Preset** to reuse on the next song
+(p. 1280).
+
+### Why subtitle tracks, not Text+ titles
+
+- Track-level styling restyles all captions at once. 255 Text+ clips would mean
+  255 separate edits.
+- No Fusion comp per caption, so the timeline stays responsive.
+- `InsertFusionTitleIntoTimeline` cannot choose its target track anyway —
+  `SetCurrentTrackIndex` passes `hasattr` but is not callable, and titles land
+  on whichever track Resolve considers current. Subtitle import places by
+  timecode instead.
+- Titles also default to 250-frame durations, which would overlap wildly at
+  9–18 frames per beat.
+
+### Layout modes
+
+| Mode | Files | On screen | Styling |
+|------|-------|-----------|---------|
+| `two-track` | 2 | `6/4` on ST1, `3/4` on ST2 | Each track styled independently — different size/colour/position per line |
+| `two-line` | 1 | `6/4` newline `3/4` | One track; Line Spacing separates them, but both lines share size/colour |
+| `beats-only` | 1 | `3/4` | Single track |
+
+`two-track` is the default because per-line styling in `two-line` requires the
+**Customize Caption** checkbox on each clip individually (manual PDF p. 1279),
+which is impractical at hundreds of captions.
+
+### Details that matter
+
+- **Denominators are musical.** A 5/8 bar counts `1/8`–`5/8`; a 6/4 bar counts
+  `1/4`–`6/4`. Not `1/5`.
+- **Gap-free.** Each caption ends exactly where the next begins, so the counter
+  never blinks out. The script validates this and reports any gap/overlap.
+- **Absolute timecode.** SRT times are `marker frame + GetStartFrame()`, since
+  marker frames are timeline-*relative* but subtitle import matches *absolute*
+  timecode.
+- **Remainder handling.** Beats divide by floor division with the remainder
+  pushed onto the last intervals, so a 106-frame 6/4 bar gives
+  `[17,17,18,18,18,18]` rather than drifting.
 
 ## Content generators (`drfx/`)
 

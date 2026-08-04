@@ -111,6 +111,36 @@ is stock (drag an Animated title template onto the subtitle track header).
 
 - `resolve_kit/` — helper library for scripting Resolve (connection, markers,
   Fusion tools). `python3 -m resolve_kit` = connection smoke test.
-- `copy_text_style.py`, `create_beat_markers.py` — Resolve scripting utilities.
+- `copy_text_style.py`, `create_beat_markers.py`, `export_beat_subtitles.py` —
+  Resolve scripting utilities.
 - `RESOLVE_API_REFERENCE.md` / `RESOLVE_SCRIPTING_GUIDE.md` — scripting API docs.
 - `temp_*.py` — scratch scripts (gitignored).
+
+## Recurring request: on-screen bar/beat counters
+
+When Marcelo asks for "the markers time signature", "beat boxes/captions", or
+text that counts beats through changing meters — **use
+`export_beat_subtitles.py`, don't rebuild it.** Run it, then give him the import
+steps. Full docs in its module docstring and README
+("On-screen bar/beat counters").
+
+The prerequisite is one marker per bar named with its time signature (`6/4`,
+`5/8`). `create_beat_markers.py` adds per-beat sub-markers from the same input;
+both share identical subdivision arithmetic so their output aligns.
+
+Hard-won constraints — don't relitigate these:
+
+- **Subtitle tracks, not Text+ titles.** Track-level styling restyles every
+  caption at once (manual p. 1278); hundreds of Text+ clips means hundreds of
+  edits plus a Fusion comp each. This is the whole reason the script exists.
+- **`SetCurrentTrackIndex` is non-functional** — passes `hasattr`, not callable.
+  `InsertFusionTitleIntoTimeline` therefore can't target a track; it lands on
+  whatever Resolve thinks is current (verified: inserted on V1 while V2 was the
+  new track). Subtitle import sidesteps this by placing on timecode.
+- **There is no subtitle-import API.** Writing the SRT is the scriptable part;
+  importing is a manual UI step (Media Pool → Import Subtitle → right-click →
+  "Insert Selected Subtitles to Timeline Using Timecode", manual p. 1271).
+- **SRT needs ABSOLUTE timecode** (`marker frame + GetStartFrame()`); marker
+  frames from `GetMarkers()` are timeline-relative.
+- **Per-line styling needs two tracks.** In a two-line caption, the
+  Customize Caption route is per-clip (p. 1279) — impractical at scale.
