@@ -175,7 +175,7 @@ def src_input(op: str, source: str = "Output") -> str:
     return f'Input {{\n\t\t\t\t\t\t\tSourceOp = "{op}",\n\t\t\t\t\t\t\tSource = "{source}",\n\t\t\t\t\t\t}}'
 
 
-def expr_input(expr: str, value=0) -> str:
+def expr_input(expr: str, value: object = 0) -> str:
     return f'Input {{ Value = {value}, Expression = "{expr}" }}'
 
 
@@ -411,6 +411,347 @@ def pump_setting() -> str:
                  tools)
 
 
+# ---------------------------------------------------------------------------
+# "AE look" tier — recreations of popular After Effects / plugin looks with
+# stock Fusion tools only. Expression grammar used: + - * / ^, sin, floor,
+# max, min, abs, iif, time. Pseudo-randomness comes from the classic sine
+# hash (x - floor(x) is frac; there is no frac()/mod in SimpleExpression), so
+# every effect renders identically on every pass — no flickering re-renders.
+# ---------------------------------------------------------------------------
+
+def _hash(n: str) -> str:
+    """Deterministic 0..1 pseudo-random value for expression `n`."""
+    s = f"(sin(({n}) * 12.9898) * 43758.5453)"
+    return f"({s} - floor({s}))"
+
+
+def _beat_phase(bpm: str, fps: str, offset: str = "0") -> str:
+    """0..1 sawtooth that restarts on every beat."""
+    beats = f"((time + {offset}) * {bpm} / (60 * max(1, {fps})))"
+    return f"({beats} - floor({beats}))"
+
+
+def glitch_setting() -> str:
+    """Digital glitch (AE 'Glitchify' / Data Glitch style): random bursts in
+    which horizontal bands of the picture tear sideways and the RGB channels
+    split. Bursts are chosen per block of `Hold Frames` frames by a sine hash,
+    so the effect is choppy-random but renders deterministically.
+
+    Chain: Src -> band Displace (driven by stretched, discontinuous noise =
+    horizontal tear bands) -> channel split (R/B shifted opposite ways) ->
+    Screen recombine."""
+    hold = "max(1, Params.NumberIn3)"
+    block = f"floor(time / {hold})"
+    gate = f"iif({_hash(block)} > 1 - Params.NumberIn2, 1, 0)"
+    # signed jitter so the RGB split swaps direction between bursts
+    jitter = f"({_hash(block + ' + 7.31')} - 0.5) * 2"
+
+    def channel_iso(name, r, g, b, pos):
+        return tool(name, "ChannelBoolean", {
+            "ToRed": f"Input {{ Value = {r}, }}",
+            "ToGreen": f"Input {{ Value = {g}, }}",
+            "ToBlue": f"Input {{ Value = {b}, }}",
+            "ToAlpha": f"Input {{ Value = {CB_ALPHA_BG}, }}",
+            "Background": src_input("Tear"),
+            "Foreground": src_input("Tear"),
+        }, pos)
+
+    shift = f"Params.NumberIn1 * 0.02 * {gate} * {jitter}"
+    tools = "\n".join([
+        params_tool([("Intensity", 1), ("Glitch Density", 0.35),
+                     ("Hold Frames", 2), ("Band Size", 1)]),
+        tool("Src", "Transform", {"Size": "Input { Value = 1, }"}, (-330, 33)),
+        tool("BandNoise", "FastNoise", {
+            "UseFrameFormatSettings": "Input { Value = 1, }",
+            "Discontinuous": "Input { Value = 1, }",
+            "Detail": "Input { Value = 1, }",
+            "Contrast": "Input { Value = 4, }",
+            "LockXY": "Input { Value = 0, }",
+            "XScale": "Input { Value = 0.5, }",
+            "YScale": expr_input("30 / max(0.25, Params.NumberIn4)", 30),
+            "SeetheRate": "Input { Value = 1, }",
+        }, (-330, 99)),
+        tool("Tear", "Displace", {
+            "Type": "Input { Value = 1, }",
+            "XRefraction": expr_input(f"Params.NumberIn1 * 0.08 * {gate}", 0),
+            "YRefraction": "Input { Value = 0, }",
+            "Input": src_input("Src"),
+            "Foreground": src_input("BandNoise"),
+        }, (-220, 33)),
+        channel_iso("IsoRed", CB_RED_BG, CB_BLACK, CB_BLACK, (-110, 0)),
+        channel_iso("IsoGreen", CB_BLACK, CB_GREEN_BG, CB_BLACK, (-110, 33)),
+        channel_iso("IsoBlue", CB_BLACK, CB_BLACK, CB_BLUE_BG, (-110, 66)),
+        tool("ShiftRed", "Transform", {
+            "Center": expr_input(f"Point(0.5 + {shift}, 0.5)", "{ 0.5, 0.5 }"),
+            "Edges": "Input { Value = 3, }",
+            "Input": src_input("IsoRed"),
+        }, (0, 0)),
+        tool("ShiftBlue", "Transform", {
+            "Center": expr_input(f"Point(0.5 - {shift}, 0.5)", "{ 0.5, 0.5 }"),
+            "Edges": "Input { Value = 3, }",
+            "Input": src_input("IsoBlue"),
+        }, (0, 66)),
+        tool("MergeRG", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "Screen" }, }',
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("IsoGreen"),
+            "Foreground": src_input("ShiftRed"),
+        }, (110, 33)),
+        tool("MergeRGB", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "Screen" }, }',
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("MergeRG"),
+            "Foreground": src_input("ShiftBlue"),
+        }, (220, 33), last=True),
+    ])
+    return macro("Glitch", ("Src", "Input"), "MergeRGB",
+                 [("Params", "NumberIn1", "Intensity", 1, 3),
+                  ("Params", "NumberIn2", "Glitch Density", 0.35, 1),
+                  ("Params", "NumberIn3", "Hold Frames", 2, 12),
+                  ("Params", "NumberIn4", "Band Size", 1, 4)],
+                 tools)
+
+
+def vhs_setting() -> str:
+    """VHS / camcorder tape look: tracking wobble (fine horizontal jitter
+    from thin animated noise bands), chroma smear (horizontal-only blur),
+    slight colour fringing, lifted blacks + washed saturation, and soft tape
+    noise on top."""
+    tools = "\n".join([
+        params_tool([("Amount", 1), ("Wobble", 1), ("Noise", 0.25)]),
+        tool("Src", "Transform", {"Size": "Input { Value = 1, }"}, (-330, 33)),
+        tool("TrackNoise", "FastNoise", {
+            "UseFrameFormatSettings": "Input { Value = 1, }",
+            "Detail": "Input { Value = 2, }",
+            "Contrast": "Input { Value = 1.5, }",
+            "LockXY": "Input { Value = 0, }",
+            "XScale": "Input { Value = 0.3, }",
+            "YScale": "Input { Value = 60, }",
+            "SeetheRate": "Input { Value = 0.6, }",
+        }, (-330, 99)),
+        tool("Wobble", "Displace", {
+            "Type": "Input { Value = 1, }",
+            "XRefraction": expr_input("Params.NumberIn2 * 0.012", 0.012),
+            "YRefraction": "Input { Value = 0, }",
+            "Input": src_input("Src"),
+            "Foreground": src_input("TrackNoise"),
+        }, (-220, 33)),
+        tool("Smear", "Blur", {
+            "Filter": 'Input { Value = FuID { "Fast Gaussian" }, }',
+            "LockXY": "Input { Value = 0, }",
+            "XBlurSize": expr_input("2.5 * Params.NumberIn1", 2.5),
+            "YBlurSize": "Input { Value = 0, }",
+            "Input": src_input("Wobble"),
+        }, (-110, 33)),
+        tool("Fringe", "Transform", {
+            "Center": expr_input("Point(0.5 + 0.002 * Params.NumberIn1, 0.5)", "{ 0.5, 0.5 }"),
+            "Edges": "Input { Value = 3, }",
+            "Input": src_input("Smear"),
+        }, (-110, 66)),
+        tool("FringeMix", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "Screen" }, }',
+            "Blend": expr_input("0.25 * Params.NumberIn1", 0.25),
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("Smear"),
+            "Foreground": src_input("Fringe"),
+        }, (0, 33)),
+        tool("TapeGrade", "BrightnessContrast", {
+            "Lift": expr_input("0.06 * Params.NumberIn1", 0.06),
+            "Gain": expr_input("1 - 0.08 * Params.NumberIn1", 0.92),
+            "Saturation": expr_input("1 - 0.3 * Params.NumberIn1", 0.7),
+            "Input": src_input("FringeMix"),
+        }, (110, 33)),
+        tool("TapeNoise", "FastNoise", {
+            "UseFrameFormatSettings": "Input { Value = 1, }",
+            "Detail": "Input { Value = 10, }",
+            "Contrast": "Input { Value = 2, }",
+            "XScale": "Input { Value = 60, }",
+            "SeetheRate": "Input { Value = 1, }",
+        }, (110, 99)),
+        tool("NoiseMix", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "SoftLight" }, }',
+            "Blend": expr_input("Params.NumberIn3", 0.25),
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("TapeGrade"),
+            "Foreground": src_input("TapeNoise"),
+        }, (220, 33), last=True),
+    ])
+    return macro("VHS", ("Src", "Input"), "NoiseMix",
+                 [("Params", "NumberIn1", "Amount", 1, 2),
+                  ("Params", "NumberIn2", "Tracking Wobble", 1, 4),
+                  ("Params", "NumberIn3", "Tape Noise", 0.25, 1)],
+                 tools)
+
+
+def beat_strobe_setting() -> str:
+    """Beat-synced strobe: a flash on every beat at the given BPM that decays
+    over `Decay` of the beat. Mode 0 = flash to white (exposure punch),
+    1 = blackout strobe. Beat Offset (frames) nudges the phase onto the
+    downbeat once the clip is placed."""
+    phase = _beat_phase("Params.NumberIn1", "Params.NumberIn5", "Params.NumberIn6")
+    pulse = f"max(0, 1 - {phase} / max(0.01, Params.NumberIn3))"
+    hit = f"Params.NumberIn2 * {pulse}"
+    gain = f"iif(Params.NumberIn4 > 0.5, 1 - {hit}, 1 + 2 * {hit})"
+    lift = f"iif(Params.NumberIn4 > 0.5, 0, 0.3 * {hit})"
+    tools = "\n".join([
+        params_tool([("BPM", 120), ("Intensity", 0.8), ("Decay", 0.3),
+                     ("Blackout Mode", 0), ("FPS", 25), ("Beat Offset", 0)]),
+        tool("Strobe", "BrightnessContrast", {
+            "Gain": expr_input(gain, 1),
+            "Lift": expr_input(lift, 0),
+        }, (0, 0), last=True),
+    ])
+    return macro("BeatStrobe", ("Strobe", "Input"), "Strobe",
+                 [("Params", "NumberIn1", "BPM", 120, 240),
+                  ("Params", "NumberIn2", "Intensity", 0.8, 1),
+                  ("Params", "NumberIn3", "Decay", 0.3, 1),
+                  ("Params", "NumberIn4", "Blackout Mode (0/1)", 0, 1),
+                  ("Params", "NumberIn5", "Timeline FPS", 25, 60),
+                  ("Params", "NumberIn6", "Beat Offset (frames)", 0, 60)],
+                 tools)
+
+
+def handheld_shake_setting() -> str:
+    """Handheld / camera shake (AE 'Wiggle' expression): smooth organic drift
+    from stacked incommensurate sines on X, Y and rotation, with a matching
+    zoom so the frame edges never show. Speed 1 = gentle handheld, 4+ =
+    earthquake."""
+    t = "(time * Params.NumberIn2)"
+    amp = "Params.NumberIn1 * 0.01"
+    x = f"0.5 + {amp} * (sin({t} * 0.31) + 0.5 * sin({t} * 0.73 + 1.7) + 0.25 * sin({t} * 1.91 + 4.1))"
+    y = f"0.5 + {amp} * (sin({t} * 0.27 + 2.3) + 0.5 * sin({t} * 0.81 + 0.6) + 0.25 * sin({t} * 2.07 + 3.3))"
+    ang = f"Params.NumberIn3 * Params.NumberIn1 * (sin({t} * 0.23 + 0.9) + 0.4 * sin({t} * 0.97 + 2.2))"
+    tools = "\n".join([
+        params_tool([("Amount", 1), ("Speed", 1), ("Rotation", 0.5)]),
+        tool("Shake", "Transform", {
+            "Center": expr_input(f"Point({x}, {y})", "{ 0.5, 0.5 }"),
+            "Angle": expr_input(ang, 0),
+            "Size": expr_input("1 + Params.NumberIn1 * 0.04", 1.04),
+            "Edges": "Input { Value = 3, }",
+            "MotionBlur": "Input { Value = 1, }",
+            "Quality": "Input { Value = 5, }",
+            "ShutterAngle": "Input { Value = 180, }",
+        }, (0, 0), last=True),
+    ])
+    return macro("HandheldShake", ("Shake", "Input"), "Shake",
+                 [("Params", "NumberIn1", "Amount", 1, 5),
+                  ("Params", "NumberIn2", "Speed", 1, 6),
+                  ("Params", "NumberIn3", "Rotation", 0.5, 3)],
+                 tools)
+
+
+def light_leak_setting() -> str:
+    """Procedural light leak: a big, soft, slowly drifting noise blob tinted
+    warm (default orange/red) and screened over the clip — the classic film
+    light-leak / lens-flare-wash overlay, no stock footage needed. Tint is a
+    ColorGain (the BrightnessContrast RGB inputs are offsets, not gains)."""
+    t = "(time * Params.NumberIn2)"
+    tools = "\n".join([
+        params_tool([("Amount", 0.6), ("Drift Speed", 1), ("Red", 1.0),
+                     ("Green", 0.45), ("Blue", 0.15)]),
+        tool("Src", "Transform", {"Size": "Input { Value = 1, }"}, (-220, 33)),
+        tool("LeakNoise", "FastNoise", {
+            "UseFrameFormatSettings": "Input { Value = 1, }",
+            "Detail": "Input { Value = 1, }",
+            "Contrast": "Input { Value = 2.5, }",
+            "Brightness": "Input { Value = -0.25, }",
+            "XScale": "Input { Value = 1.2, }",
+            "SeetheRate": expr_input("0.02 * Params.NumberIn2", 0.02),
+        }, (-220, 99)),
+        tool("LeakDrift", "Transform", {
+            "Center": expr_input(
+                f"Point(0.5 + 0.25 * sin({t} * 0.021), 0.5 + 0.15 * sin({t} * 0.017 + 1.3))",
+                "{ 0.5, 0.5 }"),
+            "Size": "Input { Value = 1.6, }",
+            "Edges": "Input { Value = 3, }",
+            "Input": src_input("LeakNoise"),
+        }, (-110, 99)),
+        tool("LeakSoft", "Blur", {
+            "Filter": 'Input { Value = FuID { "Fast Gaussian" }, }',
+            "XBlurSize": "Input { Value = 40, }",
+            "Input": src_input("LeakDrift"),
+        }, (0, 99)),
+        tool("LeakTint", "ColorGain", {
+            "GainRed": expr_input("Params.NumberIn3", 1),
+            "GainGreen": expr_input("Params.NumberIn4", 0.45),
+            "GainBlue": expr_input("Params.NumberIn5", 0.15),
+            "Input": src_input("LeakSoft"),
+        }, (110, 99)),
+        tool("LeakMerge", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "Screen" }, }',
+            "Blend": expr_input("Params.NumberIn1", 0.6),
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("Src"),
+            "Foreground": src_input("LeakTint"),
+        }, (110, 33), last=True),
+    ])
+    return macro("LightLeak", ("Src", "Input"), "LeakMerge",
+                 [("Params", "NumberIn1", "Amount", 0.6, 1),
+                  ("Params", "NumberIn2", "Drift Speed", 1, 5),
+                  ("Params", "NumberIn3", "Tint Red", 1.0, 2),
+                  ("Params", "NumberIn4", "Tint Green", 0.45, 2),
+                  ("Params", "NumberIn5", "Tint Blue", 0.15, 2)],
+                 tools)
+
+
+def neon_edges_setting() -> str:
+    """Saber-style neon outline on footage: edge detect (image minus its blur,
+    via a Difference merge), boost + tint the edges, glow them, then screen
+    them over a darkened copy of the clip. Great on silhouettes / guitar
+    necks / stage lights. Darken = how much the underlying clip is crushed."""
+    tools = "\n".join([
+        params_tool([("Edge Strength", 6), ("Glow", 4), ("Darken", 0.6),
+                     ("Red", 0.2), ("Green", 0.6), ("Blue", 1.0)]),
+        tool("Src", "Transform", {"Size": "Input { Value = 1, }"}, (-330, 33)),
+        tool("EdgeBlur", "Blur", {
+            "Filter": 'Input { Value = FuID { "Fast Gaussian" }, }',
+            "XBlurSize": "Input { Value = 3, }",
+            "Input": src_input("Src"),
+        }, (-220, 99)),
+        tool("Edges", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "Difference" }, }',
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("Src"),
+            "Foreground": src_input("EdgeBlur"),
+        }, (-110, 99)),
+        tool("EdgeBoost", "BrightnessContrast", {
+            "Gain": expr_input("Params.NumberIn1", 6),
+            "Saturation": "Input { Value = 0, }",
+            "Input": src_input("Edges"),
+        }, (0, 99)),
+        tool("EdgeTint", "ColorGain", {
+            "GainRed": expr_input("Params.NumberIn4", 0.2),
+            "GainGreen": expr_input("Params.NumberIn5", 0.6),
+            "GainBlue": expr_input("Params.NumberIn6", 1.0),
+            "Input": src_input("EdgeBoost"),
+        }, (110, 99)),
+        tool("EdgeGlow", "SoftGlow", {
+            "Filter": 'Input { Value = FuID { "Fast Gaussian" }, }',
+            "Gain": expr_input("Params.NumberIn2", 4),
+            "Threshold": "Input { Value = 0.05, }",
+            "Input": src_input("EdgeTint"),
+        }, (220, 99)),
+        tool("Crush", "BrightnessContrast", {
+            "Gain": expr_input("1 - Params.NumberIn3", 0.4),
+            "Input": src_input("Src"),
+        }, (110, 33)),
+        tool("NeonMerge", "Merge", {
+            "ApplyMode": 'Input { Value = FuID { "Screen" }, }',
+            "PerformDepthMerge": "Input { Value = 0, }",
+            "Background": src_input("Crush"),
+            "Foreground": src_input("EdgeGlow"),
+        }, (330, 33), last=True),
+    ])
+    return macro("NeonEdges", ("Src", "Input"), "NeonMerge",
+                 [("Params", "NumberIn1", "Edge Strength", 6, 20),
+                  ("Params", "NumberIn2", "Glow", 4, 10),
+                  ("Params", "NumberIn3", "Darken Clip", 0.6, 1),
+                  ("Params", "NumberIn4", "Neon Red", 0.2, 2),
+                  ("Params", "NumberIn5", "Neon Green", 0.6, 2),
+                  ("Params", "NumberIn6", "Neon Blue", 1.0, 2)],
+                 tools)
+
+
 # Registry: display name -> generator callable
 EFFECTS: dict = {
     "Vignette": vignette_setting,
@@ -421,6 +762,12 @@ EFFECTS: dict = {
     "Turbulent Displace": turbulent_displace_setting,
     "Posterize Time": posterize_time_setting,
     "Beat Pump": pump_setting,
+    "Glitch": glitch_setting,
+    "VHS": vhs_setting,
+    "Beat Strobe": beat_strobe_setting,
+    "Handheld Shake": handheld_shake_setting,
+    "Light Leak": light_leak_setting,
+    "Neon Edges": neon_edges_setting,
 }
 
 
