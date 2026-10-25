@@ -11,7 +11,7 @@ import make_effects  # noqa: E402
 
 TOOL_TYPES = (
     r"(?:MacroOperator|Custom|Transform|Merge|LUTBezier|EllipseMask|"
-    r"RectangleMask|FastNoise|ChannelBoolean|BrightnessContrast|SoftGlow|Blur|Displace|TimeStretcher)"
+    r"RectangleMask|FastNoise|ChannelBoolean|BrightnessContrast|SoftGlow|Blur|Displace|TimeStretcher|ColorGain)"
 )
 
 
@@ -92,6 +92,56 @@ class TestEffectStructure:
         assert seethe or time_expr, (
             "grain must vary per frame (SeetheRate or time expression)"
         )
+
+
+AE_LOOKS = ("Glitch", "VHS", "Beat Strobe", "Handheld Shake", "Light Leak",
+            "Neon Edges")
+
+
+class TestAELookTier:
+    def test_registered(self):
+        for name in AE_LOOKS:
+            assert name in make_effects.EFFECTS, name
+
+    def test_expressions_use_known_functions_only(self):
+        """SimpleExpression has no frac()/mod()/random(): only allow the
+        functions proven to work elsewhere in the repo."""
+        allowed = {"sin", "floor", "max", "min", "abs", "iif", "Point"}
+        for name in AE_LOOKS:
+            for expr in re.findall(r'Expression = "([^"]+)"', make_effects.EFFECTS[name]()):
+                for fn in re.findall(r"\b([A-Za-z_]\w*)\s*\(", expr):
+                    assert fn in allowed, f"{name}: unknown function {fn!r} in {expr}"
+
+    def test_expression_parens_balanced(self):
+        for name in AE_LOOKS:
+            for expr in re.findall(r'Expression = "([^"]+)"', make_effects.EFFECTS[name]()):
+                assert expr.count("(") == expr.count(")"), f"{name}: {expr}"
+
+    def test_params_fit_custom_tool(self):
+        """Custom tool exposes NumberIn1..8 only."""
+        for name in AE_LOOKS:
+            nums = {int(n) for n in re.findall(r"NumberIn(\d+)", make_effects.EFFECTS[name]())}
+            assert max(nums) <= 8, name
+
+    def test_time_driven(self):
+        for name in ("Glitch", "Beat Strobe", "Handheld Shake", "Light Leak"):
+            assert re.search(r'Expression = "[^"]*\btime\b', make_effects.EFFECTS[name]()), name
+
+    def test_hash_is_deterministic_frac(self):
+        """The sine hash maps into [0, 1) — evaluate it in Python."""
+        import math
+        expr = make_effects._hash("n")
+        for n in range(200):
+            v = eval(expr, {"sin": math.sin, "floor": math.floor, "n": n})
+            assert 0 <= v < 1
+
+    def test_beat_phase_wraps_every_beat(self):
+        import math
+        expr = make_effects._beat_phase("bpm", "fps")
+        env = {"floor": math.floor, "max": max, "bpm": 120, "fps": 25}
+        # 120 BPM @ 25 fps = a beat every 12.5 frames
+        vals = [eval(expr, dict(env, time=t)) for t in (0, 6.25, 12.5, 25)]
+        assert vals[0] == 0 and abs(vals[1] - 0.5) < 1e-9 and vals[2] == 0 and vals[3] == 0
 
 
 class TestDrfxPackaging:

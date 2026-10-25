@@ -211,7 +211,7 @@ to tweak (each transition/effect/look is a small Python function):
 | Generator | Output | Install target |
 |---|---|---|
 | `make_pack.py` | "mvarge Essentials" — 7 Fusion transitions (Zoom/Spin Punch, Whip Pan ×4, Flash Cut) + optional film-burn transitions from local footage | `Fusion/Templates/` → Effects Library > Video Transitions |
-| `make_effects.py` | "mvarge FX" — 5 Edit-page effects (Vignette, Letterbox 2.39, Film Grain, Chromatic Aberration, Punch Glow) | `Fusion/Templates/` → Effects Library > Effects |
+| `make_effects.py` | "mvarge FX" — 14 Edit-page effects: Vignette, Letterbox 2.39, Film Grain, Chromatic Aberration, Punch Glow, Turbulent Displace, Posterize Time, Beat Pump, plus the AE-look tier: Glitch, VHS, Beat Strobe, Handheld Shake, Light Leak, Neon Edges | `Fusion/Templates/` → Effects Library > Effects |
 | `make_luts.py` | "mvarge Looks" — 5 creative .cube LUTs (Punch, Film Fade, Teal Orange, Mono Crush, Cold Steel) | `LUT/` folder → LUT browser |
 
 ```bash
